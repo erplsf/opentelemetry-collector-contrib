@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package k8sclusterreceiver
 
@@ -23,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/k8sconfig"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8sclusterreceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -39,11 +30,11 @@ func TestLoadConfig(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			id:       component.NewIDWithName(typeStr, ""),
+			id:       component.NewIDWithName(metadata.Type, ""),
 			expected: createDefaultConfig(),
 		},
 		{
-			id: component.NewIDWithName(typeStr, "all_settings"),
+			id: component.NewIDWithName(metadata.Type, "all_settings"),
 			expected: &Config{
 				Distribution:               distributionKubernetes,
 				CollectionInterval:         30 * time.Second,
@@ -53,10 +44,12 @@ func TestLoadConfig(t *testing.T) {
 				APIConfig: k8sconfig.APIConfig{
 					AuthType: k8sconfig.AuthTypeServiceAccount,
 				},
+				MetadataCollectionInterval: 30 * time.Minute,
+				MetricsBuilderConfig:       metadata.DefaultMetricsBuilderConfig(),
 			},
 		},
 		{
-			id: component.NewIDWithName(typeStr, "partial_settings"),
+			id: component.NewIDWithName(metadata.Type, "partial_settings"),
 			expected: &Config{
 				Distribution:               distributionOpenShift,
 				CollectionInterval:         30 * time.Second,
@@ -64,6 +57,8 @@ func TestLoadConfig(t *testing.T) {
 				APIConfig: k8sconfig.APIConfig{
 					AuthType: k8sconfig.AuthTypeServiceAccount,
 				},
+				MetadataCollectionInterval: 5 * time.Minute,
+				MetricsBuilderConfig:       metadata.DefaultMetricsBuilderConfig(),
 			},
 		},
 	}
@@ -75,9 +70,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
@@ -89,9 +84,9 @@ func TestInvalidConfig(t *testing.T) {
 		Distribution:       distributionKubernetes,
 		CollectionInterval: 30 * time.Second,
 	}
-	err := component.ValidateConfig(cfg)
-	assert.NotNil(t, err)
-	assert.Equal(t, "invalid authType for kubernetes: ", err.Error())
+	err := xconfmap.Validate(cfg)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "invalid authType for kubernetes: ")
 
 	// Wrong distro
 	cfg = &Config{
@@ -99,7 +94,8 @@ func TestInvalidConfig(t *testing.T) {
 		Distribution:       "wrong",
 		CollectionInterval: 30 * time.Second,
 	}
-	err = component.ValidateConfig(cfg)
-	assert.NotNil(t, err)
-	assert.Equal(t, "\"wrong\" is not a supported distribution. Must be one of: \"openshift\", \"kubernetes\"", err.Error())
+	expectedErr := "\"wrong\" is not a supported distribution. Must be one of: \"openshift\", \"kubernetes\""
+	err = xconfmap.Validate(cfg)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, expectedErr)
 }

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package azuredataexplorerexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/azuredataexplorerexporter"
 
@@ -24,7 +13,7 @@ import (
 	"github.com/Azure/azure-kusto-go/kusto"
 	"github.com/Azure/azure-kusto-go/kusto/data/errors"
 	"github.com/Azure/azure-kusto-go/kusto/data/table"
-	"github.com/Azure/azure-kusto-go/kusto/data/types"
+	"github.com/Azure/azure-kusto-go/kusto/kql"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +25,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/azuredataexplorerexporter/internal/metadata"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/traceutil"
 )
 
@@ -64,7 +54,7 @@ const (
 )
 
 // E2E tests while sending the trace data through the exporter
-func TestCreateTracesExporterE2E(t *testing.T) {
+func TestCreateTracesE2E(t *testing.T) {
 	t.Parallel()
 	config, isValid := getConfig()
 	if !isValid {
@@ -72,7 +62,7 @@ func TestCreateTracesExporterE2E(t *testing.T) {
 	}
 	// Create an exporter
 	f := NewFactory()
-	exp, err := f.CreateTracesExporter(context.Background(), exportertest.NewNopCreateSettings(), config)
+	exp, err := f.CreateTraces(context.Background(), exportertest.NewNopSettings(metadata.Type), config)
 	require.NoError(t, err)
 	err = exp.Start(context.Background(), componenttest.NewNopHost())
 	require.NoError(t, err)
@@ -80,12 +70,11 @@ func TestCreateTracesExporterE2E(t *testing.T) {
 	td, tID, attrs := createTraces()
 	err = exp.ConsumeTraces(context.Background(), td)
 	require.NoError(t, err)
-	kustoDefinitions, kustoParameters := prepareQuery(tID)
 	// Statements
-	traceStmt := kusto.NewStmt(traceValidationQuery)
-	traceStmt = traceStmt.MustDefinitions(kusto.NewDefinitions().Must(kustoDefinitions)).MustParameters(kusto.NewParameters().Must(kustoParameters))
+	traceStmt := kql.New(traceValidationQuery)
+	traceStmtParams := kql.NewParameters().AddString("TID", tID)
 	// Query using our trace table for TraceID
-	iter, err := createClientAndExecuteQuery(t, *config, traceStmt)
+	iter, err := createClientAndExecuteQuery(t, *config, traceStmt, traceStmtParams)
 	if err != nil {
 		assert.Fail(t, err.Error())
 	}
@@ -118,6 +107,7 @@ func TestCreateTracesExporterE2E(t *testing.T) {
 		assert.Equal(t, "", recs[i].ParentID)
 		assert.Equal(t, spanName, recs[i].SpanName)
 		assert.Equal(t, "STATUS_CODE_UNSET", recs[i].SpanStatus)
+		assert.Equal(t, "STATUS_MESSAGE", recs[i].SpanStatusMessage)
 		assert.Equal(t, "SPAN_KIND_UNSPECIFIED", recs[i].SpanKind)
 		assert.Equal(t, epochTimeString, recs[i].StartTime)
 		assert.Equal(t, epochTimeString, recs[i].EndTime)
@@ -127,7 +117,7 @@ func TestCreateTracesExporterE2E(t *testing.T) {
 }
 
 // E2E tests while sending the logs data through the exporter
-func TestCreateLogsExporterE2E(t *testing.T) {
+func TestCreateLogsE2E(t *testing.T) {
 	t.Parallel()
 	config, isValid := getConfig()
 	if !isValid {
@@ -135,7 +125,7 @@ func TestCreateLogsExporterE2E(t *testing.T) {
 	}
 	// Create an exporter
 	f := NewFactory()
-	exp, err := f.CreateLogsExporter(context.Background(), exportertest.NewNopCreateSettings(), config)
+	exp, err := f.CreateLogs(context.Background(), exportertest.NewNopSettings(metadata.Type), config)
 	require.NoError(t, err)
 	err = exp.Start(context.Background(), componenttest.NewNopHost())
 	require.NoError(t, err)
@@ -143,12 +133,10 @@ func TestCreateLogsExporterE2E(t *testing.T) {
 	ld, tID, attrs := createLogs()
 	err = exp.ConsumeLogs(context.Background(), ld)
 	require.NoError(t, err)
-	kustoDefinitions, kustoParameters := prepareQuery(tID)
 	// Statements
-	traceStmt := kusto.NewStmt(logValidationQuery)
-	traceStmt = traceStmt.MustDefinitions(kusto.NewDefinitions().Must(kustoDefinitions)).MustParameters(kusto.NewParameters().Must(kustoParameters))
-	// Query using our logs table for TraceID
-	iter, err := createClientAndExecuteQuery(t, *config, traceStmt)
+	traceStmt := kql.New(traceValidationQuery)
+	traceStmtParams := kql.NewParameters().AddString("TID", tID)
+	iter, err := createClientAndExecuteQuery(t, *config, traceStmt, traceStmtParams)
 	if err != nil {
 		assert.Fail(t, err.Error())
 	}
@@ -190,7 +178,7 @@ func TestCreateLogsExporterE2E(t *testing.T) {
 }
 
 // E2E tests while sending the metrics data through the exporter
-func TestCreateMetricsExporterE2E(t *testing.T) {
+func TestCreateMetricsE2E(t *testing.T) {
 	t.Parallel()
 	config, isValid := getConfig()
 	if !isValid {
@@ -198,7 +186,7 @@ func TestCreateMetricsExporterE2E(t *testing.T) {
 	}
 	// Create an exporter
 	f := NewFactory()
-	exp, err := f.CreateMetricsExporter(context.Background(), exportertest.NewNopCreateSettings(), config)
+	exp, err := f.CreateMetrics(context.Background(), exportertest.NewNopSettings(metadata.Type), config)
 	require.NoError(t, err)
 	err = exp.Start(context.Background(), componenttest.NewNopHost())
 	require.NoError(t, err)
@@ -206,12 +194,11 @@ func TestCreateMetricsExporterE2E(t *testing.T) {
 	md, attrs, metricName := createMetrics()
 	err = exp.ConsumeMetrics(context.Background(), md)
 	require.NoError(t, err)
-	kustoDefinitions, kustoParameters := prepareQuery(metricName)
 	// Statements
-	traceStmt := kusto.NewStmt(metricValidationQuery)
-	traceStmt = traceStmt.MustDefinitions(kusto.NewDefinitions().Must(kustoDefinitions)).MustParameters(kusto.NewParameters().Must(kustoParameters))
+	traceStmt := kql.New(traceValidationQuery)
+	traceStmtParams := kql.NewParameters().AddString("TID", metricName)
 	// Query using our logs table for TraceID
-	iter, err := createClientAndExecuteQuery(t, *config, traceStmt)
+	iter, err := createClientAndExecuteQuery(t, *config, traceStmt, traceStmtParams)
 	if err != nil {
 		assert.Fail(t, err.Error())
 	}
@@ -246,14 +233,6 @@ func TestCreateMetricsExporterE2E(t *testing.T) {
 	t.Cleanup(func() { _ = exp.Shutdown(context.Background()) })
 }
 
-func prepareQuery(tID string) (kusto.ParamTypes, kusto.QueryValues) {
-	kustoDefinitions := make(kusto.ParamTypes)
-	kustoParameters := make(kusto.QueryValues)
-	kustoDefinitions["TID"] = kusto.ParamType{Type: types.String}
-	kustoParameters["TID"] = tID
-	return kustoDefinitions, kustoParameters
-}
-
 func getConfig() (*Config, bool) {
 	if os.Getenv(clusterURI) == "" || os.Getenv(appID) == "" || os.Getenv(appKey) == "" || os.Getenv(tenantID) == "" || os.Getenv(otelE2EDb) == "" {
 		return nil, false
@@ -277,11 +256,12 @@ func getConfig() (*Config, bool) {
 	}, true
 }
 
-func createTraces() (ptrace.Traces, string, map[string]interface{}) {
+func createTraces() (ptrace.Traces, string, map[string]any) {
 	td := ptrace.NewTraces()
 	span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
 	span.SetName(spanName)
-	attrs := map[string]interface{}{
+	span.Status().SetMessage("STATUS_MESSAGE")
+	attrs := map[string]any{
 		"k0": "v0",
 		"k1": "v1",
 	}
@@ -301,10 +281,10 @@ func createTraces() (ptrace.Traces, string, map[string]interface{}) {
 	return td, traceutil.TraceIDToHexOrEmptyString(span.TraceID()), attrs
 }
 
-func createLogs() (plog.Logs, string, map[string]interface{}) {
+func createLogs() (plog.Logs, string, map[string]any) {
 	testLogs := plog.NewLogs()
 	tID := uuid.New().String()
-	attrs := map[string]interface{}{
+	attrs := map[string]any{
 		"l0": "a0",
 		"l1": "a1",
 	}
@@ -326,10 +306,10 @@ func createLogs() (plog.Logs, string, map[string]interface{}) {
 	return testLogs, traceutil.TraceIDToHexOrEmptyString(logRecord.TraceID()), attrs
 }
 
-func createMetrics() (pmetric.Metrics, map[string]interface{}, string) {
+func createMetrics() (pmetric.Metrics, map[string]any, string) {
 	tm := pmetric.NewMetrics()
 	tID := uuid.New().String()
-	attrs := map[string]interface{}{
+	attrs := map[string]any{
 		"m1": "a0",
 		"m2": "a1",
 	}
@@ -347,7 +327,7 @@ func createMetrics() (pmetric.Metrics, map[string]interface{}, string) {
 	return tm, attrs, metricNameGUID
 }
 
-func createClientAndExecuteQuery(t *testing.T, config Config, stmt kusto.Stmt) (*kusto.RowIterator, error) {
+func createClientAndExecuteQuery(t *testing.T, config Config, query *kql.Builder, params *kql.Parameters) (*kusto.RowIterator, error) {
 	kcsb := kusto.NewConnectionStringBuilder(config.ClusterURI).WithAadAppKey(config.ApplicationID, string(config.ApplicationKey), config.TenantID)
 	client, kerr := kusto.New(kcsb)
 	// The client should be created
@@ -359,6 +339,7 @@ func createClientAndExecuteQuery(t *testing.T, config Config, stmt kusto.Stmt) (
 	return client.Query(
 		context.Background(),
 		config.Database,
-		stmt,
+		query,
+		kusto.QueryParameters(params),
 	)
 }

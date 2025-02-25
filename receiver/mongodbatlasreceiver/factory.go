@@ -1,16 +1,5 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package mongodbatlasreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/mongodbatlasreceiver"
 
@@ -21,58 +10,55 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/exporter/exporterhelper"
-	rcvr "go.opentelemetry.io/collector/receiver"
-	"go.opentelemetry.io/collector/receiver/scraperhelper"
+	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/collector/scraper/scraperhelper"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/mongodbatlasreceiver/internal/metadata"
 )
 
 const (
-	typeStr              = "mongodbatlas"
-	stability            = component.StabilityLevelBeta
 	defaultGranularity   = "PT1M" // 1-minute, as per https://docs.atlas.mongodb.com/reference/api/process-measurements/
 	defaultAlertsEnabled = false
 	defaultLogsEnabled   = false
 )
 
 // NewFactory creates a factory for MongoDB Atlas receiver
-func NewFactory() rcvr.Factory {
-	return rcvr.NewFactory(
-		typeStr,
+func NewFactory() receiver.Factory {
+	return receiver.NewFactory(
+		metadata.Type,
 		createDefaultConfig,
-		rcvr.WithMetrics(createMetricsReceiver, stability),
-		rcvr.WithLogs(createCombinedLogReceiver, stability))
-
+		receiver.WithMetrics(createMetricsReceiver, metadata.MetricsStability),
+		receiver.WithLogs(createCombinedLogReceiver, metadata.LogsStability))
 }
 
 func createMetricsReceiver(
 	_ context.Context,
-	params rcvr.CreateSettings,
+	params receiver.Settings,
 	rConf component.Config,
 	consumer consumer.Metrics,
-) (rcvr.Metrics, error) {
+) (receiver.Metrics, error) {
 	cfg := rConf.(*Config)
 	recv := newMongoDBAtlasReceiver(params, cfg)
 	ms, err := newMongoDBAtlasScraper(recv)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create a MongoDB Atlas Scaper instance: %w", err)
+		return nil, fmt.Errorf("unable to create a MongoDB Atlas Scraper instance: %w", err)
 	}
 
-	return scraperhelper.NewScraperControllerReceiver(&cfg.ScraperControllerSettings, params, consumer, scraperhelper.AddScraper(ms))
+	return scraperhelper.NewMetricsController(&cfg.ControllerConfig, params, consumer, scraperhelper.AddScraper(metadata.Type, ms))
 }
 
 func createCombinedLogReceiver(
-	ctx context.Context,
-	params rcvr.CreateSettings,
+	_ context.Context,
+	params receiver.Settings,
 	rConf component.Config,
 	consumer consumer.Logs,
-) (rcvr.Logs, error) {
+) (receiver.Logs, error) {
 	cfg := rConf.(*Config)
 
 	if !cfg.Alerts.Enabled && !cfg.Logs.Enabled && cfg.Events == nil {
-		return nil, errors.New("one of 'alerts', 'events' or 'logs' must be enabled")
+		return nil, errors.New("one of 'alerts', 'events', or 'logs' must be enabled")
 	}
 
 	var err error
@@ -90,6 +76,13 @@ func createCombinedLogReceiver(
 
 	if cfg.Logs.Enabled {
 		recv.logs = newMongoDBAtlasLogsReceiver(params, cfg, consumer)
+		// Confirm at least one project is enabled for access logs before adding
+		for _, project := range cfg.Logs.Projects {
+			if project.AccessLogs != nil && project.AccessLogs.IsEnabled() {
+				recv.accessLogs = newAccessLogsReceiver(params, cfg, consumer)
+				break
+			}
+		}
 	}
 
 	if cfg.Events != nil {
@@ -101,10 +94,10 @@ func createCombinedLogReceiver(
 
 func createDefaultConfig() component.Config {
 	c := &Config{
-		ScraperControllerSettings: scraperhelper.NewDefaultScraperControllerSettings(typeStr),
-		Granularity:               defaultGranularity,
-		RetrySettings:             exporterhelper.NewDefaultRetrySettings(),
-		MetricsBuilderConfig:      metadata.DefaultMetricsBuilderConfig(),
+		ControllerConfig:     scraperhelper.NewDefaultControllerConfig(),
+		Granularity:          defaultGranularity,
+		BackOffConfig:        configretry.NewDefaultBackOffConfig(),
+		MetricsBuilderConfig: metadata.DefaultMetricsBuilderConfig(),
 		Alerts: AlertConfig{
 			Enabled:      defaultAlertsEnabled,
 			Mode:         alertModeListen,
@@ -114,11 +107,11 @@ func createDefaultConfig() component.Config {
 		},
 		Logs: LogConfig{
 			Enabled:  defaultLogsEnabled,
-			Projects: []*ProjectConfig{},
+			Projects: []*LogsProjectConfig{},
 		},
 	}
 	// reset default of 1 minute to be 3 minutes in order to avoid null values for some metrics that do not publish
 	// more frequently
-	c.ScraperControllerSettings.CollectionInterval = 3 * time.Minute
+	c.ControllerConfig.CollectionInterval = 3 * time.Minute
 	return c
 }

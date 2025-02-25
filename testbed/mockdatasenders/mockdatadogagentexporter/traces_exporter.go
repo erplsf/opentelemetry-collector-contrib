@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package mockdatadogagentexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/testbed/mockdatasenders/mockdatadogagentexporter"
 
@@ -34,13 +23,13 @@ import (
 type ddExporter struct {
 	endpoint       string
 	client         *http.Client
-	clientSettings *confighttp.HTTPClientSettings
+	clientSettings *confighttp.ClientConfig
 }
 
 func createExporter(c *Config) *ddExporter {
 	dd := &ddExporter{
 		endpoint:       c.Endpoint,
-		clientSettings: &c.HTTPClientSettings,
+		clientSettings: &c.ClientConfig,
 		client:         nil,
 	}
 
@@ -48,8 +37,8 @@ func createExporter(c *Config) *ddExporter {
 }
 
 // start creates the http client
-func (dd *ddExporter) start(_ context.Context, host component.Host) (err error) {
-	dd.client, err = dd.clientSettings.ToClient(host, componenttest.NewNopTelemetrySettings())
+func (dd *ddExporter) start(ctx context.Context, host component.Host) (err error) {
+	dd.client, err = dd.clientSettings.ToClient(ctx, host, componenttest.NewNopTelemetrySettings())
 	return
 }
 
@@ -63,7 +52,7 @@ func (dd *ddExporter) pushTraces(ctx context.Context, td ptrace.Traces) error {
 			ils := resSpans.ScopeSpans().At(i)
 			for s := 0; s < ils.Spans().Len(); s++ {
 				span := ils.Spans().At(s)
-				var newSpan = pb.Span{
+				newSpan := pb.Span{
 					Service:  "test",
 					Name:     "test",
 					Resource: "test",
@@ -98,7 +87,7 @@ func (dd *ddExporter) pushTraces(ctx context.Context, td ptrace.Traces) error {
 		return consumererror.NewPermanent(fmt.Errorf("failed to encode msgp: %w", err))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", dd.endpoint, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dd.endpoint, &buf)
 	if err != nil {
 		return fmt.Errorf("failed to push trace data via DD exporter: %w", err)
 	}

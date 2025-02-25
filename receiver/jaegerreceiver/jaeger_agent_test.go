@@ -1,34 +1,19 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package jaegerreceiver
 
 import (
 	"context"
-	"fmt"
 	"net"
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/jaegertracing/jaeger-idl/model/v1"
+	"github.com/jaegertracing/jaeger-idl/thrift-gen/agent"
+	jaegerthrift "github.com/jaegertracing/jaeger-idl/thrift-gen/jaeger"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/servers/thriftudp"
-	"github.com/jaegertracing/jaeger/model"
-	jaegerconvert "github.com/jaegertracing/jaeger/model/converter/thrift/jaeger"
-	"github.com/jaegertracing/jaeger/proto-gen/api_v2"
-	"github.com/jaegertracing/jaeger/thrift-gen/agent"
-	jaegerthrift "github.com/jaegertracing/jaeger/thrift-gen/jaeger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
@@ -36,33 +21,34 @@ import (
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/receiver/receivertest"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
-	"google.golang.org/grpc"
+	conventions "go.opentelemetry.io/collector/semconv/v1.27.0"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/testutil"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/jaeger"
+	jaegerconvert "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/jaeger/jaegerthriftcoverter"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/jaegerreceiver/internal/metadata"
 )
 
-var jaegerAgent = component.NewIDWithName(typeStr, "agent_test")
+var jaegerAgent = component.NewIDWithName(metadata.Type, "agent_test")
 
 func TestJaegerAgentUDP_ThriftCompact(t *testing.T) {
 	addr := testutil.GetAvailableLocalAddress(t)
-	testJaegerAgent(t, addr, &configuration{
-		AgentCompactThrift: ProtocolUDP{
+	testJaegerAgent(t, addr, Protocols{
+		ThriftCompactUDP: &ProtocolUDP{
 			Endpoint:        addr,
-			ServerConfigUDP: DefaultServerConfigUDP(),
+			ServerConfigUDP: defaultServerConfigUDP(),
 		},
 	})
 }
 
 func TestJaegerAgentUDP_ThriftCompact_InvalidPort(t *testing.T) {
-	config := &configuration{
-		AgentCompactThrift: ProtocolUDP{
+	config := Protocols{
+		ThriftCompactUDP: &ProtocolUDP{
 			Endpoint:        "0.0.0.0:999999",
-			ServerConfigUDP: DefaultServerConfigUDP(),
+			ServerConfigUDP: defaultServerConfigUDP(),
 		},
 	}
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	jr, err := newJaegerReceiver(jaegerAgent, config, nil, set)
 	require.NoError(t, err)
 
@@ -73,10 +59,10 @@ func TestJaegerAgentUDP_ThriftCompact_InvalidPort(t *testing.T) {
 
 func TestJaegerAgentUDP_ThriftBinary(t *testing.T) {
 	addr := testutil.GetAvailableLocalAddress(t)
-	testJaegerAgent(t, addr, &configuration{
-		AgentBinaryThrift: ProtocolUDP{
+	testJaegerAgent(t, addr, Protocols{
+		ThriftBinaryUDP: &ProtocolUDP{
 			Endpoint:        addr,
-			ServerConfigUDP: DefaultServerConfigUDP(),
+			ServerConfigUDP: defaultServerConfigUDP(),
 		},
 	})
 }
@@ -85,17 +71,17 @@ func TestJaegerAgentUDP_ThriftBinary_PortInUse(t *testing.T) {
 	// This test confirms that the thrift binary port is opened correctly.  This is all we can test at the moment.  See above.
 	addr := testutil.GetAvailableLocalAddress(t)
 
-	config := &configuration{
-		AgentBinaryThrift: ProtocolUDP{
+	config := Protocols{
+		ThriftBinaryUDP: &ProtocolUDP{
 			Endpoint:        addr,
-			ServerConfigUDP: DefaultServerConfigUDP(),
+			ServerConfigUDP: defaultServerConfigUDP(),
 		},
 	}
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	jr, err := newJaegerReceiver(jaegerAgent, config, nil, set)
 	require.NoError(t, err)
 
-	assert.NoError(t, jr.startAgent(componenttest.NewNopHost()), "Start failed")
+	assert.NoError(t, jr.startAgent(), "Start failed")
 	t.Cleanup(func() { require.NoError(t, jr.Shutdown(context.Background())) })
 
 	l, err := net.Listen("udp", addr)
@@ -107,13 +93,13 @@ func TestJaegerAgentUDP_ThriftBinary_PortInUse(t *testing.T) {
 }
 
 func TestJaegerAgentUDP_ThriftBinary_InvalidPort(t *testing.T) {
-	config := &configuration{
-		AgentBinaryThrift: ProtocolUDP{
+	config := Protocols{
+		ThriftBinaryUDP: &ProtocolUDP{
 			Endpoint:        "0.0.0.0:999999",
-			ServerConfigUDP: DefaultServerConfigUDP(),
+			ServerConfigUDP: defaultServerConfigUDP(),
 		},
 	}
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	jr, err := newJaegerReceiver(jaegerAgent, config, nil, set)
 	require.NoError(t, err)
 
@@ -122,66 +108,10 @@ func TestJaegerAgentUDP_ThriftBinary_InvalidPort(t *testing.T) {
 	require.NoError(t, jr.Shutdown(context.Background()))
 }
 
-func initializeGRPCTestServer(t *testing.T, beforeServe func(server *grpc.Server), opts ...grpc.ServerOption) (*grpc.Server, net.Addr) {
-	server := grpc.NewServer(opts...)
-	lis, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	beforeServe(server)
-	go func() {
-		err := server.Serve(lis)
-		require.NoError(t, err)
-	}()
-	return server, lis.Addr()
-}
-
-type mockSamplingHandler struct {
-}
-
-func (*mockSamplingHandler) GetSamplingStrategy(context.Context, *api_v2.SamplingStrategyParameters) (*api_v2.SamplingStrategyResponse, error) {
-	return &api_v2.SamplingStrategyResponse{StrategyType: api_v2.SamplingStrategyType_PROBABILISTIC}, nil
-}
-
-func TestJaegerHTTP(t *testing.T) {
-	s, _ := initializeGRPCTestServer(t, func(s *grpc.Server) {
-		api_v2.RegisterSamplingManagerServer(s, &mockSamplingHandler{})
-	})
-	defer s.GracefulStop()
-
-	endpoint := testutil.GetAvailableLocalAddress(t)
-	config := &configuration{
-		AgentHTTPEndpoint: endpoint,
-	}
-	set := receivertest.NewNopCreateSettings()
-	jr, err := newJaegerReceiver(jaegerAgent, config, nil, set)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, jr.Shutdown(context.Background())) })
-
-	assert.NoError(t, jr.Start(context.Background(), componenttest.NewNopHost()), "Start failed")
-
-	// allow http server to start
-	assert.Eventually(t, func() bool {
-		var conn net.Conn
-		conn, err = net.Dial("tcp", endpoint)
-		if err == nil && conn != nil {
-			conn.Close()
-			return true
-		}
-		return false
-	}, 10*time.Second, 5*time.Millisecond, "failed to wait for the port to be open")
-
-	resp, err := http.Get(fmt.Sprintf("http://%s/sampling?service=test", endpoint))
-	assert.NoError(t, err, "should not have failed to make request")
-	if resp != nil {
-		assert.Equal(t, 500, resp.StatusCode, "should have returned 200")
-		return
-	}
-	t.Fail()
-}
-
-func testJaegerAgent(t *testing.T, agentEndpoint string, receiverConfig *configuration) {
+func testJaegerAgent(t *testing.T, agentEndpoint string, receiverConfig Protocols) {
 	// 1. Create the Jaeger receiver aka "server"
 	sink := new(consumertest.TracesSink)
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	jr, err := newJaegerReceiver(jaegerAgent, receiverConfig, sink, set)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, jr.Shutdown(context.Background())) })
@@ -190,20 +120,19 @@ func testJaegerAgent(t *testing.T, agentEndpoint string, receiverConfig *configu
 		err = jr.Start(context.Background(), componenttest.NewNopHost())
 		if err == nil {
 			break
-		} else {
-			time.Sleep(50 * time.Millisecond)
 		}
+
+		time.Sleep(50 * time.Millisecond)
 	}
 	require.NoError(t, err, "Start failed")
 
 	// 2. Then send spans to the Jaeger receiver.
-	jexp, err := newClientUDP(agentEndpoint, jr.config.AgentBinaryThrift.Endpoint != "")
+	jexp, err := newClientUDP(agentEndpoint, jr.config.ThriftBinaryUDP != nil)
 	require.NoError(t, err, "Failed to create the Jaeger OpenTelemetry exporter for the live application")
 
 	// 3. Now finally send some spans
 	td := generateTraceData()
-	batches, err := jaeger.ProtoFromTraces(td)
-	require.NoError(t, err)
+	batches := jaeger.ProtoFromTraces(td)
 	for _, batch := range batches {
 		require.NoError(t, jexp.EmitBatch(context.Background(), modelToThrift(batch)))
 	}
@@ -213,7 +142,7 @@ func testJaegerAgent(t *testing.T, agentEndpoint string, receiverConfig *configu
 	}, 10*time.Second, 5*time.Millisecond)
 
 	gotTraces := sink.AllTraces()
-	require.Equal(t, 1, len(gotTraces))
+	require.Len(t, gotTraces, 1)
 	assert.EqualValues(t, td, gotTraces[0])
 }
 

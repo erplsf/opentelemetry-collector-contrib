@@ -1,23 +1,12 @@
-// Copyright 2019, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package translator // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awsxrayexporter/internal/translator"
 
 import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	conventionsv112 "go.opentelemetry.io/collector/semconv/v1.12.0"
 
 	awsxray "github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/xray"
 )
@@ -36,15 +25,15 @@ func makeSQL(span ptrace.Span, attributes map[string]pcommon.Value) (map[string]
 
 	for key, value := range attributes {
 		switch key {
-		case conventions.AttributeDBConnectionString:
+		case conventionsv112.AttributeDBConnectionString:
 			dbConnectionString = value.Str()
-		case conventions.AttributeDBSystem:
+		case conventionsv112.AttributeDBSystem:
 			dbSystem = value.Str()
-		case conventions.AttributeDBName:
+		case conventionsv112.AttributeDBName:
 			dbInstance = value.Str()
-		case conventions.AttributeDBStatement:
+		case conventionsv112.AttributeDBStatement:
 			dbStatement = value.Str()
-		case conventions.AttributeDBUser:
+		case conventionsv112.AttributeDBUser:
 			dbUser = value.Str()
 		default:
 			filtered[key] = value

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package saphanareceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/saphanareceiver"
 
@@ -23,14 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/pmetrictest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/saphanareceiver/internal/metadata"
 )
 
-const fullExpectedMetricsPath = "./testdata/expected_metrics/full.yaml"
-const partialExpectedMetricsPath = "./testdata/expected_metrics/mostly_disabled.yaml"
-const allQueryMetrics = "./testdata/mocked_queries/all_query_results.json"
-const mostlyDisabledQueryMetrics = "./testdata/mocked_queries/mostly_disabled_results.json"
+const (
+	fullExpectedMetricsPath    = "./testdata/expected_metrics/full.yaml"
+	partialExpectedMetricsPath = "./testdata/expected_metrics/mostly_disabled.yaml"
+	allQueryMetrics            = "./testdata/mocked_queries/all_query_results.json"
+	mostlyDisabledQueryMetrics = "./testdata/mocked_queries/mostly_disabled_results.json"
+)
 
 func TestScraper(t *testing.T) {
 	t.Parallel()
@@ -38,17 +30,18 @@ func TestScraper(t *testing.T) {
 	dbWrapper := &testDBWrapper{}
 	initializeWrapper(t, dbWrapper, allQueryMetrics)
 
-	sc, err := newSapHanaScraper(receivertest.NewNopCreateSettings(), createDefaultConfig().(*Config), &testConnectionFactory{dbWrapper})
+	sc, err := newSapHanaScraper(receivertest.NewNopSettings(metadata.Type), createDefaultConfig().(*Config), &testConnectionFactory{dbWrapper})
 	require.NoError(t, err)
 
 	expectedMetrics, err := golden.ReadMetrics(fullExpectedMetricsPath)
 	require.NoError(t, err)
 
-	actualMetrics, err := sc.Scrape(context.Background())
+	actualMetrics, err := sc.ScrapeMetrics(context.Background())
 	require.NoError(t, err)
 
 	require.NoError(t, pmetrictest.CompareMetrics(expectedMetrics, actualMetrics,
-		pmetrictest.IgnoreResourceMetricsOrder(), pmetrictest.IgnoreStartTimestamp(), pmetrictest.IgnoreTimestamp()))
+		pmetrictest.IgnoreResourceMetricsOrder(), pmetrictest.IgnoreMetricDataPointsOrder(),
+		pmetrictest.IgnoreStartTimestamp(), pmetrictest.IgnoreTimestamp()))
 }
 
 func TestDisabledMetrics(t *testing.T) {
@@ -104,13 +97,13 @@ func TestDisabledMetrics(t *testing.T) {
 	cfg.MetricsBuilderConfig.Metrics.SaphanaVolumeOperationSize.Enabled = false
 	cfg.MetricsBuilderConfig.Metrics.SaphanaVolumeOperationTime.Enabled = false
 
-	sc, err := newSapHanaScraper(receivertest.NewNopCreateSettings(), cfg, &testConnectionFactory{dbWrapper})
+	sc, err := newSapHanaScraper(receivertest.NewNopSettings(metadata.Type), cfg, &testConnectionFactory{dbWrapper})
 	require.NoError(t, err)
 
 	expectedMetrics, err := golden.ReadMetrics(partialExpectedMetricsPath)
 	require.NoError(t, err)
 
-	actualMetrics, err := sc.Scrape(context.Background())
+	actualMetrics, err := sc.ScrapeMetrics(context.Background())
 	require.NoError(t, err)
 
 	require.NoError(t, pmetrictest.CompareMetrics(expectedMetrics, actualMetrics,

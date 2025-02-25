@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package adapter
 
@@ -19,22 +8,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumertest"
-	"go.opentelemetry.io/collector/obsreport"
+	"go.opentelemetry.io/collector/receiver/receiverhelper"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.uber.org/zap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator/helper"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator/transformer/noop"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/pipeline"
 )
 
 func createNoopReceiver(nextConsumer consumer.Logs) (*receiver, error) {
-	emitter := NewLogEmitter(zap.NewNop().Sugar())
+	set := componenttest.NewNopTelemetrySettings()
+	set.Logger = zap.NewNop()
 
 	pipe, err := pipeline.Config{
 		Operators: []operator.Config{
@@ -42,29 +34,32 @@ func createNoopReceiver(nextConsumer consumer.Logs) (*receiver, error) {
 				Builder: noop.NewConfig(),
 			},
 		},
-	}.Build(zap.NewNop().Sugar())
+	}.Build(set)
 	if err != nil {
 		return nil, err
 	}
 
-	receiverID := component.NewID("test")
-	obsrecv, err := obsreport.NewReceiver(obsreport.ReceiverSettings{
+	receiverID := component.MustNewID("test")
+	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
 		ReceiverID:             receiverID,
-		ReceiverCreateSettings: receivertest.NewNopCreateSettings(),
+		ReceiverCreateSettings: receivertest.NewNopSettings(receiverID.Type()),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &receiver{
-		id:        component.NewID("testReceiver"),
-		pipe:      pipe,
-		emitter:   emitter,
-		consumer:  nextConsumer,
-		logger:    zap.NewNop(),
-		converter: NewConverter(zap.NewNop()),
-		obsrecv:   obsrecv,
-	}, nil
+	rcv := &receiver{
+		set:      set,
+		id:       component.MustNewID("testReceiver"),
+		pipe:     pipe,
+		consumer: nextConsumer,
+		obsrecv:  obsrecv,
+	}
+
+	emitter := helper.NewLogEmitter(set, rcv.consumeEntries)
+
+	rcv.emitter = emitter
+	return rcv, nil
 }
 
 // BenchmarkEmitterToConsumer serves as a benchmark for entries going from the emitter to consumer,
@@ -75,9 +70,44 @@ func BenchmarkEmitterToConsumer(b *testing.B) {
 		hostsCount = 4
 	)
 
-	var (
-		entries = complexEntriesForNDifferentHosts(entryCount, hostsCount)
+	entries := complexEntriesForNDifferentHosts(entryCount, hostsCount)
+
+	cl := &consumertest.LogsSink{}
+	logsReceiver, err := createNoopReceiver(cl)
+	require.NoError(b, err)
+
+	err = logsReceiver.Start(context.Background(), componenttest.NewNopHost())
+	require.NoError(b, err)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		cl.Reset()
+
+		go func() {
+			ctx := context.Background()
+			for _, e := range entries {
+				_ = logsReceiver.emitter.Process(ctx, e)
+			}
+		}()
+
+		require.Eventually(b,
+			func() bool {
+				return cl.LogRecordCount() == entryCount
+			},
+			30*time.Second, 5*time.Millisecond, "Did not receive all logs (only received %d)", cl.LogRecordCount(),
+		)
+	}
+}
+
+func BenchmarkEmitterToConsumerScopeGroupping(b *testing.B) {
+	const (
+		entryCount  = 1_000_000
+		hostsCount  = 2
+		scopesCount = 2
 	)
+
+	entries := complexEntriesForNDifferentHostsMDifferentScopes(entryCount, hostsCount, scopesCount)
 
 	cl := &consumertest.LogsSink{}
 	logsReceiver, err := createNoopReceiver(cl)
@@ -121,11 +151,15 @@ func TestEmitterToConsumer(t *testing.T) {
 
 	err = logsReceiver.Start(context.Background(), componenttest.NewNopHost())
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, logsReceiver.emitter.Stop())
+		require.NoError(t, logsReceiver.Shutdown(context.Background()))
+	}()
 
 	go func() {
 		ctx := context.Background()
 		for _, e := range entries {
-			require.NoError(t, logsReceiver.emitter.Process(ctx, e))
+			assert.NoError(t, logsReceiver.emitter.Process(ctx, e))
 		}
 	}()
 

@@ -1,16 +1,5 @@
-// Copyright OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package azureblobreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureblobreceiver"
 
@@ -23,6 +12,8 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/receiver/receivertest"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureblobreceiver/internal/metadata"
 )
 
 func TestNewFactory(t *testing.T) {
@@ -31,21 +22,21 @@ func TestNewFactory(t *testing.T) {
 	assert.NotNil(t, f)
 }
 
-func TestCreateTracesReceiver(t *testing.T) {
+func TestCreateTraces(t *testing.T) {
 	f := NewFactory()
 	ctx := context.Background()
-	params := receivertest.NewNopCreateSettings()
-	receiver, err := f.CreateTracesReceiver(ctx, params, getConfig(), consumertest.NewNop())
+	params := receivertest.NewNopSettings(metadata.Type)
+	receiver, err := f.CreateTraces(ctx, params, getConfig(), consumertest.NewNop())
 
 	require.NoError(t, err)
 	assert.NotNil(t, receiver)
 }
 
-func TestCreateLogsReceiver(t *testing.T) {
+func TestCreateLogs(t *testing.T) {
 	f := NewFactory()
 	ctx := context.Background()
-	params := receivertest.NewNopCreateSettings()
-	receiver, err := f.CreateLogsReceiver(ctx, params, getConfig(), consumertest.NewNop())
+	params := receivertest.NewNopSettings(metadata.Type)
+	receiver, err := f.CreateLogs(ctx, params, getConfig(), consumertest.NewNop())
 
 	require.NoError(t, err)
 	assert.NotNil(t, receiver)
@@ -54,12 +45,12 @@ func TestCreateLogsReceiver(t *testing.T) {
 func TestTracesAndLogsReceiversAreSame(t *testing.T) {
 	f := NewFactory()
 	ctx := context.Background()
-	params := receivertest.NewNopCreateSettings()
+	params := receivertest.NewNopSettings(metadata.Type)
 	config := getConfig()
-	logsReceiver, err := f.CreateLogsReceiver(ctx, params, config, consumertest.NewNop())
+	logsReceiver, err := f.CreateLogs(ctx, params, config, consumertest.NewNop())
 	require.NoError(t, err)
 
-	tracesReceiver, err := f.CreateTracesReceiver(ctx, params, config, consumertest.NewNop())
+	tracesReceiver, err := f.CreateTraces(ctx, params, config, consumertest.NewNop())
 	require.NoError(t, err)
 
 	assert.Equal(t, logsReceiver, tracesReceiver)
@@ -67,6 +58,7 @@ func TestTracesAndLogsReceiversAreSame(t *testing.T) {
 
 func getConfig() component.Config {
 	return &Config{
+		Authentication:   "connection_string",
 		ConnectionString: goodConnectionString,
 		Logs:             LogsConfig{ContainerName: logsContainerName},
 		Traces:           TracesConfig{ContainerName: tracesContainerName},

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package cloudflarereceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver"
 
@@ -19,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -28,46 +18,53 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/component/componentstatus"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	rcvr "go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/errorutil"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver/internal/metadata"
 )
 
 type logsReceiver struct {
-	logger   *zap.Logger
-	cfg      *LogsConfig
-	server   *http.Server
-	consumer consumer.Logs
-	wg       *sync.WaitGroup
-	id       component.ID // ID of the receiver component
+	logger            *zap.Logger
+	cfg               *LogsConfig
+	server            *http.Server
+	consumer          consumer.Logs
+	wg                *sync.WaitGroup
+	id                component.ID // ID of the receiver component
+	telemetrySettings component.TelemetrySettings
 }
 
 const secretHeaderName = "X-CF-Secret"
-const receiverScopeName = "otelcol/" + typeStr
 
-func newLogsReceiver(params rcvr.CreateSettings, cfg *Config, consumer consumer.Logs) (*logsReceiver, error) {
+func newLogsReceiver(params rcvr.Settings, cfg *Config, consumer consumer.Logs) (*logsReceiver, error) {
 	recv := &logsReceiver{
-		cfg:      &cfg.Logs,
-		consumer: consumer,
-		logger:   params.Logger,
-		wg:       &sync.WaitGroup{},
-		id:       params.ID,
+		cfg:               &cfg.Logs,
+		consumer:          consumer,
+		logger:            params.Logger,
+		wg:                &sync.WaitGroup{},
+		telemetrySettings: params.TelemetrySettings,
+		id:                params.ID,
 	}
 
-	tlsConfig, err := recv.cfg.TLS.LoadTLSConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	s := &http.Server{
-		TLSConfig:         tlsConfig,
+	recv.server = &http.Server{
 		Handler:           http.HandlerFunc(recv.handleRequest),
 		ReadHeaderTimeout: 20 * time.Second,
 	}
 
-	recv.server = s
+	if recv.cfg.TLS != nil {
+		tlsConfig, err := recv.cfg.TLS.LoadTLSConfig(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		recv.server.TLSConfig = tlsConfig
+	}
+
 	return recv, nil
 }
 
@@ -102,18 +99,32 @@ func (l *logsReceiver) startListening(ctx context.Context, host component.Host) 
 	go func() {
 		defer l.wg.Done()
 
-		l.logger.Debug("Starting ServeTLS",
-			zap.String("address", l.cfg.Endpoint),
-			zap.String("certfile", l.cfg.TLS.CertFile),
-			zap.String("keyfile", l.cfg.TLS.KeyFile))
+		if l.cfg.TLS != nil {
+			l.logger.Debug("Starting ServeTLS",
+				zap.String("address", l.cfg.Endpoint),
+				zap.String("certfile", l.cfg.TLS.CertFile),
+				zap.String("keyfile", l.cfg.TLS.KeyFile))
 
-		err := l.server.ServeTLS(listener, l.cfg.TLS.CertFile, l.cfg.TLS.KeyFile)
+			err := l.server.ServeTLS(listener, l.cfg.TLS.CertFile, l.cfg.TLS.KeyFile)
 
-		l.logger.Debug("Serve TLS done")
+			l.logger.Debug("ServeTLS done")
 
-		if err != http.ErrServerClosed {
-			l.logger.Error("ServeTLS failed", zap.Error(err))
-			host.ReportFatalError(err)
+			if !errors.Is(err, http.ErrServerClosed) {
+				l.logger.Error("ServeTLS failed", zap.Error(err))
+				componentstatus.ReportStatus(host, componentstatus.NewFatalErrorEvent(err))
+			}
+		} else {
+			l.logger.Debug("Starting Serve",
+				zap.String("address", l.cfg.Endpoint))
+
+			err := l.server.Serve(listener)
+
+			l.logger.Debug("Serve done")
+
+			if !errors.Is(err, http.ErrServerClosed) {
+				l.logger.Error("Serve failed", zap.Error(err))
+				componentstatus.ReportStatus(host, componentstatus.NewFatalErrorEvent(err))
+			}
 		}
 	}()
 	return nil
@@ -173,7 +184,7 @@ func (l *logsReceiver) handleRequest(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	if err := l.consumer.ConsumeLogs(req.Context(), l.processLogs(pcommon.NewTimestampFromTime(time.Now()), logs)); err != nil {
-		rw.WriteHeader(http.StatusInternalServerError)
+		errorutil.HTTPError(rw, err)
 		l.logger.Error("Failed to consumer alert as log", zap.Error(err))
 		return
 	}
@@ -181,13 +192,14 @@ func (l *logsReceiver) handleRequest(rw http.ResponseWriter, req *http.Request) 
 	rw.WriteHeader(http.StatusOK)
 }
 
-func parsePayload(payload []byte) ([]map[string]interface{}, error) {
-	var logs []map[string]interface{}
-	for _, line := range bytes.Split(payload, []byte("\n")) {
+func parsePayload(payload []byte) ([]map[string]any, error) {
+	lines := bytes.Split(payload, []byte("\n"))
+	logs := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
 		if len(line) == 0 {
 			continue
 		}
-		var log map[string]interface{}
+		var log map[string]any
 		err := json.Unmarshal(line, &log)
 		if err != nil {
 			return logs, err
@@ -197,11 +209,11 @@ func parsePayload(payload []byte) ([]map[string]interface{}, error) {
 	return logs, nil
 }
 
-func (l *logsReceiver) processLogs(now pcommon.Timestamp, logs []map[string]interface{}) plog.Logs {
+func (l *logsReceiver) processLogs(now pcommon.Timestamp, logs []map[string]any) plog.Logs {
 	pLogs := plog.NewLogs()
 
 	// Group logs by ZoneName field if it was configured so it can be used as a resource attribute
-	groupedLogs := make(map[string][]map[string]interface{})
+	groupedLogs := make(map[string][]map[string]any)
 	for _, log := range logs {
 		zone := ""
 		if v, ok := log["ZoneName"]; ok {
@@ -219,7 +231,7 @@ func (l *logsReceiver) processLogs(now pcommon.Timestamp, logs []map[string]inte
 			resource.Attributes().PutStr("cloudflare.zone", zone)
 		}
 		scopeLogs := resourceLogs.ScopeLogs().AppendEmpty()
-		scopeLogs.Scope().SetName(receiverScopeName)
+		scopeLogs.Scope().SetName(metadata.ScopeName)
 
 		for _, log := range logGroup {
 			logRecord := scopeLogs.LogRecords().AppendEmpty()
@@ -229,12 +241,12 @@ func (l *logsReceiver) processLogs(now pcommon.Timestamp, logs []map[string]inte
 				if stringV, ok := v.(string); ok {
 					ts, err := time.Parse(time.RFC3339, stringV)
 					if err != nil {
-						l.logger.Warn(fmt.Sprintf("unable to parse %s", l.cfg.TimestampField), zap.Error(err), zap.String("value", stringV))
+						l.logger.Warn("unable to parse "+l.cfg.TimestampField, zap.Error(err), zap.String("value", stringV))
 					} else {
 						logRecord.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 					}
 				} else {
-					l.logger.Warn(fmt.Sprintf("unable to parse %s", l.cfg.TimestampField), zap.Any("value", v))
+					l.logger.Warn("unable to parse "+l.cfg.TimestampField, zap.Any("value", v))
 				}
 			}
 

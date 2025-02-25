@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package attraction // import "github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/attraction"
 
@@ -21,15 +10,10 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/collector/client"
-	"go.opentelemetry.io/collector/featuregate"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.uber.org/zap"
-)
 
-var enableSha256Gate = featuregate.GlobalRegistry().MustRegister(
-	"coreinternal.attraction.hash.sha256",
-	featuregate.StageAlpha,
-	featuregate.WithRegisterDescription("When enabled, switches hashing algorithm from SHA-1 to SHA-2 256"),
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/clientutil"
 )
 
 // Settings specifies the processor settings.
@@ -48,9 +32,9 @@ type ActionKeyValue struct {
 
 	// Value specifies the value to populate for the key.
 	// The type of the value is inferred from the configuration.
-	Value interface{} `mapstructure:"value"`
+	Value any `mapstructure:"value"`
 
-	// A regex pattern  must be specified for the action EXTRACT.
+	// A regex pattern must be specified for the action EXTRACT.
 	// It uses the attribute specified by `key' to extract values from
 	// The target keys are inferred based on the names of the matcher groups
 	// provided and the names will be inferred based on the values of the
@@ -183,7 +167,7 @@ type AttrProc struct {
 // and returns a AttrProc to be used to process attributes.
 // An error is returned if there are any invalid inputs.
 func NewAttrProc(settings *Settings) (*AttrProc, error) {
-	var attributeActions []attributeAction
+	attributeActions := make([]attributeAction, 0, len(settings.Actions))
 	for i, a := range settings.Actions {
 		// Convert `action` to lowercase for comparison.
 		a.Action = Action(strings.ToLower(string(a.Action)))
@@ -359,14 +343,17 @@ func (ap *AttrProc) Process(ctx context.Context, logger *zap.Logger, attrs pcomm
 
 func getAttributeValueFromContext(ctx context.Context, key string) (pcommon.Value, bool) {
 	const (
-		metadataPrefix = "metadata."
-		authPrefix     = "auth."
+		metadataPrefix   = "metadata."
+		authPrefix       = "auth."
+		clientAddressKey = "client.address"
 	)
 
 	ci := client.FromContext(ctx)
 	var vals []string
 
 	switch {
+	case key == clientAddressKey:
+		vals = []string{clientutil.Address(ci)}
 	case strings.HasPrefix(key, metadataPrefix):
 		mdKey := strings.TrimPrefix(key, metadataPrefix)
 		vals = ci.Metadata.Get(mdKey)
@@ -414,11 +401,7 @@ func getSourceAttributeValue(ctx context.Context, action attributeAction, attrs 
 
 func hashAttribute(key string, attrs pcommon.Map) {
 	if value, exists := attrs.Get(key); exists {
-		if enableSha256Gate.IsEnabled() {
-			sha2Hasher(value)
-		} else {
-			sha1Hasher(value)
-		}
+		sha2Hasher(value)
 	}
 }
 
@@ -457,7 +440,7 @@ func getMatchingKeys(regexp *regexp.Regexp, attrs pcommon.Map) []string {
 		return keys
 	}
 
-	attrs.Range(func(k string, v pcommon.Value) bool {
+	attrs.Range(func(k string, _ pcommon.Value) bool {
 		if regexp.MatchString(k) {
 			keys = append(keys, k)
 		}

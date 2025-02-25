@@ -31,8 +31,6 @@ all_set:
       enabled: true
     mysql.joins:
       enabled: true
-    mysql.locked_connects:
-      enabled: true
     mysql.locks:
       enabled: true
     mysql.log_operations:
@@ -69,6 +67,8 @@ all_set:
       enabled: true
     mysql.statement_event.wait.time:
       enabled: true
+    mysql.table.average_row_length:
+      enabled: true
     mysql.table.io.wait.count:
       enabled: true
     mysql.table.io.wait.time:
@@ -81,11 +81,17 @@ all_set:
       enabled: true
     mysql.table.lock_wait.write.time:
       enabled: true
+    mysql.table.rows:
+      enabled: true
+    mysql.table.size:
+      enabled: true
     mysql.table_open_cache:
       enabled: true
     mysql.threads:
       enabled: true
     mysql.tmp_resources:
+      enabled: true
+    mysql.uptime:
       enabled: true
   resource_attributes:
     mysql.instance.endpoint:
@@ -122,8 +128,6 @@ none_set:
       enabled: false
     mysql.joins:
       enabled: false
-    mysql.locked_connects:
-      enabled: false
     mysql.locks:
       enabled: false
     mysql.log_operations:
@@ -160,6 +164,8 @@ none_set:
       enabled: false
     mysql.statement_event.wait.time:
       enabled: false
+    mysql.table.average_row_length:
+      enabled: false
     mysql.table.io.wait.count:
       enabled: false
     mysql.table.io.wait.time:
@@ -172,12 +178,30 @@ none_set:
       enabled: false
     mysql.table.lock_wait.write.time:
       enabled: false
+    mysql.table.rows:
+      enabled: false
+    mysql.table.size:
+      enabled: false
     mysql.table_open_cache:
       enabled: false
     mysql.threads:
       enabled: false
     mysql.tmp_resources:
       enabled: false
+    mysql.uptime:
+      enabled: false
   resource_attributes:
     mysql.instance.endpoint:
       enabled: false
+filter_set_include:
+  resource_attributes:
+    mysql.instance.endpoint:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+filter_set_exclude:
+  resource_attributes:
+    mysql.instance.endpoint:
+      enabled: true
+      metrics_exclude:
+        - strict: "mysql.instance.endpoint-val"

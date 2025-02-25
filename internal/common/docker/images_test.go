@@ -1,21 +1,13 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package docker
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDockerImageToElements(t *testing.T) {
@@ -53,11 +45,11 @@ func TestDockerImageToElements(t *testing.T) {
 		{
 			name: "image with sha256 hash",
 			args: args{
-				image: "alpine:test@sha256:00000000000000",
+				image: "alpine:test@sha256:dbc66f8c46d4cf4793527ca0737d73527a2bb830019953c2371b5f45f515f1a8",
 			},
 			wantRepository: "alpine",
 			wantTag:        "test",
-			wantSHA256:     "00000000000000",
+			wantSHA256:     "dbc66f8c46d4cf4793527ca0737d73527a2bb830019953c2371b5f45f515f1a8",
 			wantErr:        false,
 		},
 		{
@@ -144,18 +136,13 @@ func TestDockerImageToElements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			image, err := ParseImageName(tt.args.image)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseImageName() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if image.Repository != tt.wantRepository {
-				t.Errorf("ParseImageName() repository = %v, want %v", image.Repository, tt.wantRepository)
-			}
-			if image.Tag != tt.wantTag {
-				t.Errorf("ParseImageName() tag = %v, want %v", image.Tag, tt.wantTag)
-			}
-			if image.SHA256 != tt.wantSHA256 {
-				t.Errorf("ParseImageName() hash = %v, want %v", image.SHA256, tt.wantSHA256)
+			if !tt.wantErr {
+				assert.NoError(t, err, "ParseImageName() error = %v, wantErr %v", err, tt.wantErr)
+				assert.Equal(t, tt.wantRepository, image.Repository, "ParseImageName() repository = %v, want %v", image.Repository, tt.wantRepository)
+				assert.Equal(t, tt.wantTag, image.Tag, "ParseImageName() tag = %v, want %v", image.Tag, tt.wantTag)
+				assert.Equal(t, tt.wantSHA256, image.SHA256, "ParseImageName() hash = %v, want %v", image.SHA256, tt.wantSHA256)
+			} else {
+				require.Error(t, err)
 			}
 		})
 	}

@@ -6,126 +6,12 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
 )
 
-// MetricSettings provides common settings for a particular metric.
-type MetricSettings struct {
-	Enabled bool `mapstructure:"enabled"`
-
-	enabledSetByUser bool
-}
-
-func (ms *MetricSettings) Unmarshal(parser *confmap.Conf) error {
-	if parser == nil {
-		return nil
-	}
-	err := parser.Unmarshal(ms, confmap.WithErrorUnused())
-	if err != nil {
-		return err
-	}
-	ms.enabledSetByUser = parser.IsSet("enabled")
-	return nil
-}
-
-// MetricsSettings provides settings for activedirectorydsreceiver metrics.
-type MetricsSettings struct {
-	ActiveDirectoryDsBindRate                                  MetricSettings `mapstructure:"active_directory.ds.bind.rate"`
-	ActiveDirectoryDsLdapBindLastSuccessfulTime                MetricSettings `mapstructure:"active_directory.ds.ldap.bind.last_successful.time"`
-	ActiveDirectoryDsLdapBindRate                              MetricSettings `mapstructure:"active_directory.ds.ldap.bind.rate"`
-	ActiveDirectoryDsLdapClientSessionCount                    MetricSettings `mapstructure:"active_directory.ds.ldap.client.session.count"`
-	ActiveDirectoryDsLdapSearchRate                            MetricSettings `mapstructure:"active_directory.ds.ldap.search.rate"`
-	ActiveDirectoryDsNameCacheHitRate                          MetricSettings `mapstructure:"active_directory.ds.name_cache.hit_rate"`
-	ActiveDirectoryDsNotificationQueued                        MetricSettings `mapstructure:"active_directory.ds.notification.queued"`
-	ActiveDirectoryDsOperationRate                             MetricSettings `mapstructure:"active_directory.ds.operation.rate"`
-	ActiveDirectoryDsReplicationNetworkIo                      MetricSettings `mapstructure:"active_directory.ds.replication.network.io"`
-	ActiveDirectoryDsReplicationObjectRate                     MetricSettings `mapstructure:"active_directory.ds.replication.object.rate"`
-	ActiveDirectoryDsReplicationOperationPending               MetricSettings `mapstructure:"active_directory.ds.replication.operation.pending"`
-	ActiveDirectoryDsReplicationPropertyRate                   MetricSettings `mapstructure:"active_directory.ds.replication.property.rate"`
-	ActiveDirectoryDsReplicationSyncObjectPending              MetricSettings `mapstructure:"active_directory.ds.replication.sync.object.pending"`
-	ActiveDirectoryDsReplicationSyncRequestCount               MetricSettings `mapstructure:"active_directory.ds.replication.sync.request.count"`
-	ActiveDirectoryDsReplicationValueRate                      MetricSettings `mapstructure:"active_directory.ds.replication.value.rate"`
-	ActiveDirectoryDsSecurityDescriptorPropagationsEventQueued MetricSettings `mapstructure:"active_directory.ds.security_descriptor_propagations_event.queued"`
-	ActiveDirectoryDsSuboperationRate                          MetricSettings `mapstructure:"active_directory.ds.suboperation.rate"`
-	ActiveDirectoryDsThreadCount                               MetricSettings `mapstructure:"active_directory.ds.thread.count"`
-}
-
-func DefaultMetricsSettings() MetricsSettings {
-	return MetricsSettings{
-		ActiveDirectoryDsBindRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsLdapBindLastSuccessfulTime: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsLdapBindRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsLdapClientSessionCount: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsLdapSearchRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsNameCacheHitRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsNotificationQueued: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsOperationRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationNetworkIo: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationObjectRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationOperationPending: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationPropertyRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationSyncObjectPending: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationSyncRequestCount: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsReplicationValueRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsSecurityDescriptorPropagationsEventQueued: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsSuboperationRate: MetricSettings{
-			Enabled: true,
-		},
-		ActiveDirectoryDsThreadCount: MetricSettings{
-			Enabled: true,
-		},
-	}
-}
-
-// ResourceAttributeSettings provides common settings for a particular metric.
-type ResourceAttributeSettings struct {
-	Enabled bool `mapstructure:"enabled"`
-}
-
-// ResourceAttributesSettings provides settings for activedirectorydsreceiver metrics.
-type ResourceAttributesSettings struct {
-}
-
-func DefaultResourceAttributesSettings() ResourceAttributesSettings {
-	return ResourceAttributesSettings{}
-}
-
-// AttributeBindType specifies the a value bind_type attribute.
+// AttributeBindType specifies the value bind_type attribute.
 type AttributeBindType int
 
 const (
@@ -151,7 +37,7 @@ var MapAttributeBindType = map[string]AttributeBindType{
 	"client": AttributeBindTypeClient,
 }
 
-// AttributeDirection specifies the a value direction attribute.
+// AttributeDirection specifies the value direction attribute.
 type AttributeDirection int
 
 const (
@@ -177,7 +63,7 @@ var MapAttributeDirection = map[string]AttributeDirection{
 	"received": AttributeDirectionReceived,
 }
 
-// AttributeNetworkDataType specifies the a value network_data_type attribute.
+// AttributeNetworkDataType specifies the value network_data_type attribute.
 type AttributeNetworkDataType int
 
 const (
@@ -203,7 +89,7 @@ var MapAttributeNetworkDataType = map[string]AttributeNetworkDataType{
 	"uncompressed": AttributeNetworkDataTypeUncompressed,
 }
 
-// AttributeOperationType specifies the a value operation_type attribute.
+// AttributeOperationType specifies the value operation_type attribute.
 type AttributeOperationType int
 
 const (
@@ -233,7 +119,7 @@ var MapAttributeOperationType = map[string]AttributeOperationType{
 	"search": AttributeOperationTypeSearch,
 }
 
-// AttributeSuboperationType specifies the a value suboperation_type attribute.
+// AttributeSuboperationType specifies the value suboperation_type attribute.
 type AttributeSuboperationType int
 
 const (
@@ -259,7 +145,7 @@ var MapAttributeSuboperationType = map[string]AttributeSuboperationType{
 	"search":                                 AttributeSuboperationTypeSearch,
 }
 
-// AttributeSyncResult specifies the a value sync_result attribute.
+// AttributeSyncResult specifies the value sync_result attribute.
 type AttributeSyncResult int
 
 const (
@@ -289,20 +175,20 @@ var MapAttributeSyncResult = map[string]AttributeSyncResult{
 	"other":           AttributeSyncResultOther,
 }
 
-// AttributeValueType specifies the a value value_type attribute.
+// AttributeValueType specifies the value value_type attribute.
 type AttributeValueType int
 
 const (
 	_ AttributeValueType = iota
-	AttributeValueTypeDistingushedNames
+	AttributeValueTypeDistinguishedNames
 	AttributeValueTypeOther
 )
 
 // String returns the string representation of the AttributeValueType.
 func (av AttributeValueType) String() string {
 	switch av {
-	case AttributeValueTypeDistingushedNames:
-		return "distingushed_names"
+	case AttributeValueTypeDistinguishedNames:
+		return "distinguished_names"
 	case AttributeValueTypeOther:
 		return "other"
 	}
@@ -311,13 +197,13 @@ func (av AttributeValueType) String() string {
 
 // MapAttributeValueType is a helper map of string to AttributeValueType attribute value.
 var MapAttributeValueType = map[string]AttributeValueType{
-	"distingushed_names": AttributeValueTypeDistingushedNames,
-	"other":              AttributeValueTypeOther,
+	"distinguished_names": AttributeValueTypeDistinguishedNames,
+	"other":               AttributeValueTypeOther,
 }
 
 type metricActiveDirectoryDsBindRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -333,7 +219,7 @@ func (m *metricActiveDirectoryDsBindRate) init() {
 }
 
 func (m *metricActiveDirectoryDsBindRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64, bindTypeAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -352,16 +238,16 @@ func (m *metricActiveDirectoryDsBindRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsBindRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsBindRate(settings MetricSettings) metricActiveDirectoryDsBindRate {
-	m := metricActiveDirectoryDsBindRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsBindRate(cfg MetricConfig) metricActiveDirectoryDsBindRate {
+	m := metricActiveDirectoryDsBindRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -370,7 +256,7 @@ func newMetricActiveDirectoryDsBindRate(settings MetricSettings) metricActiveDir
 
 type metricActiveDirectoryDsLdapBindLastSuccessfulTime struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -383,7 +269,7 @@ func (m *metricActiveDirectoryDsLdapBindLastSuccessfulTime) init() {
 }
 
 func (m *metricActiveDirectoryDsLdapBindLastSuccessfulTime) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Gauge().DataPoints().AppendEmpty()
@@ -401,16 +287,16 @@ func (m *metricActiveDirectoryDsLdapBindLastSuccessfulTime) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsLdapBindLastSuccessfulTime) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Gauge().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Gauge().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsLdapBindLastSuccessfulTime(settings MetricSettings) metricActiveDirectoryDsLdapBindLastSuccessfulTime {
-	m := metricActiveDirectoryDsLdapBindLastSuccessfulTime{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsLdapBindLastSuccessfulTime(cfg MetricConfig) metricActiveDirectoryDsLdapBindLastSuccessfulTime {
+	m := metricActiveDirectoryDsLdapBindLastSuccessfulTime{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -419,7 +305,7 @@ func newMetricActiveDirectoryDsLdapBindLastSuccessfulTime(settings MetricSetting
 
 type metricActiveDirectoryDsLdapBindRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -434,7 +320,7 @@ func (m *metricActiveDirectoryDsLdapBindRate) init() {
 }
 
 func (m *metricActiveDirectoryDsLdapBindRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -452,16 +338,16 @@ func (m *metricActiveDirectoryDsLdapBindRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsLdapBindRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsLdapBindRate(settings MetricSettings) metricActiveDirectoryDsLdapBindRate {
-	m := metricActiveDirectoryDsLdapBindRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsLdapBindRate(cfg MetricConfig) metricActiveDirectoryDsLdapBindRate {
+	m := metricActiveDirectoryDsLdapBindRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -470,7 +356,7 @@ func newMetricActiveDirectoryDsLdapBindRate(settings MetricSettings) metricActiv
 
 type metricActiveDirectoryDsLdapClientSessionCount struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -485,7 +371,7 @@ func (m *metricActiveDirectoryDsLdapClientSessionCount) init() {
 }
 
 func (m *metricActiveDirectoryDsLdapClientSessionCount) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -503,16 +389,16 @@ func (m *metricActiveDirectoryDsLdapClientSessionCount) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsLdapClientSessionCount) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsLdapClientSessionCount(settings MetricSettings) metricActiveDirectoryDsLdapClientSessionCount {
-	m := metricActiveDirectoryDsLdapClientSessionCount{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsLdapClientSessionCount(cfg MetricConfig) metricActiveDirectoryDsLdapClientSessionCount {
+	m := metricActiveDirectoryDsLdapClientSessionCount{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -521,7 +407,7 @@ func newMetricActiveDirectoryDsLdapClientSessionCount(settings MetricSettings) m
 
 type metricActiveDirectoryDsLdapSearchRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -536,7 +422,7 @@ func (m *metricActiveDirectoryDsLdapSearchRate) init() {
 }
 
 func (m *metricActiveDirectoryDsLdapSearchRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -554,16 +440,16 @@ func (m *metricActiveDirectoryDsLdapSearchRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsLdapSearchRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsLdapSearchRate(settings MetricSettings) metricActiveDirectoryDsLdapSearchRate {
-	m := metricActiveDirectoryDsLdapSearchRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsLdapSearchRate(cfg MetricConfig) metricActiveDirectoryDsLdapSearchRate {
+	m := metricActiveDirectoryDsLdapSearchRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -572,7 +458,7 @@ func newMetricActiveDirectoryDsLdapSearchRate(settings MetricSettings) metricAct
 
 type metricActiveDirectoryDsNameCacheHitRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -585,7 +471,7 @@ func (m *metricActiveDirectoryDsNameCacheHitRate) init() {
 }
 
 func (m *metricActiveDirectoryDsNameCacheHitRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Gauge().DataPoints().AppendEmpty()
@@ -603,16 +489,16 @@ func (m *metricActiveDirectoryDsNameCacheHitRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsNameCacheHitRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Gauge().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Gauge().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsNameCacheHitRate(settings MetricSettings) metricActiveDirectoryDsNameCacheHitRate {
-	m := metricActiveDirectoryDsNameCacheHitRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsNameCacheHitRate(cfg MetricConfig) metricActiveDirectoryDsNameCacheHitRate {
+	m := metricActiveDirectoryDsNameCacheHitRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -621,7 +507,7 @@ func newMetricActiveDirectoryDsNameCacheHitRate(settings MetricSettings) metricA
 
 type metricActiveDirectoryDsNotificationQueued struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -636,7 +522,7 @@ func (m *metricActiveDirectoryDsNotificationQueued) init() {
 }
 
 func (m *metricActiveDirectoryDsNotificationQueued) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -654,16 +540,16 @@ func (m *metricActiveDirectoryDsNotificationQueued) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsNotificationQueued) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsNotificationQueued(settings MetricSettings) metricActiveDirectoryDsNotificationQueued {
-	m := metricActiveDirectoryDsNotificationQueued{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsNotificationQueued(cfg MetricConfig) metricActiveDirectoryDsNotificationQueued {
+	m := metricActiveDirectoryDsNotificationQueued{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -672,7 +558,7 @@ func newMetricActiveDirectoryDsNotificationQueued(settings MetricSettings) metri
 
 type metricActiveDirectoryDsOperationRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -688,7 +574,7 @@ func (m *metricActiveDirectoryDsOperationRate) init() {
 }
 
 func (m *metricActiveDirectoryDsOperationRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64, operationTypeAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -707,16 +593,16 @@ func (m *metricActiveDirectoryDsOperationRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsOperationRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsOperationRate(settings MetricSettings) metricActiveDirectoryDsOperationRate {
-	m := metricActiveDirectoryDsOperationRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsOperationRate(cfg MetricConfig) metricActiveDirectoryDsOperationRate {
+	m := metricActiveDirectoryDsOperationRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -725,7 +611,7 @@ func newMetricActiveDirectoryDsOperationRate(settings MetricSettings) metricActi
 
 type metricActiveDirectoryDsReplicationNetworkIo struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -741,7 +627,7 @@ func (m *metricActiveDirectoryDsReplicationNetworkIo) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationNetworkIo) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64, directionAttributeValue string, networkDataTypeAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -761,16 +647,16 @@ func (m *metricActiveDirectoryDsReplicationNetworkIo) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationNetworkIo) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationNetworkIo(settings MetricSettings) metricActiveDirectoryDsReplicationNetworkIo {
-	m := metricActiveDirectoryDsReplicationNetworkIo{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationNetworkIo(cfg MetricConfig) metricActiveDirectoryDsReplicationNetworkIo {
+	m := metricActiveDirectoryDsReplicationNetworkIo{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -779,7 +665,7 @@ func newMetricActiveDirectoryDsReplicationNetworkIo(settings MetricSettings) met
 
 type metricActiveDirectoryDsReplicationObjectRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -795,7 +681,7 @@ func (m *metricActiveDirectoryDsReplicationObjectRate) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationObjectRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64, directionAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -814,16 +700,16 @@ func (m *metricActiveDirectoryDsReplicationObjectRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationObjectRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationObjectRate(settings MetricSettings) metricActiveDirectoryDsReplicationObjectRate {
-	m := metricActiveDirectoryDsReplicationObjectRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationObjectRate(cfg MetricConfig) metricActiveDirectoryDsReplicationObjectRate {
+	m := metricActiveDirectoryDsReplicationObjectRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -832,7 +718,7 @@ func newMetricActiveDirectoryDsReplicationObjectRate(settings MetricSettings) me
 
 type metricActiveDirectoryDsReplicationOperationPending struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -847,7 +733,7 @@ func (m *metricActiveDirectoryDsReplicationOperationPending) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationOperationPending) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -865,16 +751,16 @@ func (m *metricActiveDirectoryDsReplicationOperationPending) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationOperationPending) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationOperationPending(settings MetricSettings) metricActiveDirectoryDsReplicationOperationPending {
-	m := metricActiveDirectoryDsReplicationOperationPending{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationOperationPending(cfg MetricConfig) metricActiveDirectoryDsReplicationOperationPending {
+	m := metricActiveDirectoryDsReplicationOperationPending{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -883,7 +769,7 @@ func newMetricActiveDirectoryDsReplicationOperationPending(settings MetricSettin
 
 type metricActiveDirectoryDsReplicationPropertyRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -899,7 +785,7 @@ func (m *metricActiveDirectoryDsReplicationPropertyRate) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationPropertyRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64, directionAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -918,16 +804,16 @@ func (m *metricActiveDirectoryDsReplicationPropertyRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationPropertyRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationPropertyRate(settings MetricSettings) metricActiveDirectoryDsReplicationPropertyRate {
-	m := metricActiveDirectoryDsReplicationPropertyRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationPropertyRate(cfg MetricConfig) metricActiveDirectoryDsReplicationPropertyRate {
+	m := metricActiveDirectoryDsReplicationPropertyRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -936,7 +822,7 @@ func newMetricActiveDirectoryDsReplicationPropertyRate(settings MetricSettings) 
 
 type metricActiveDirectoryDsReplicationSyncObjectPending struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -951,7 +837,7 @@ func (m *metricActiveDirectoryDsReplicationSyncObjectPending) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationSyncObjectPending) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -969,16 +855,16 @@ func (m *metricActiveDirectoryDsReplicationSyncObjectPending) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationSyncObjectPending) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationSyncObjectPending(settings MetricSettings) metricActiveDirectoryDsReplicationSyncObjectPending {
-	m := metricActiveDirectoryDsReplicationSyncObjectPending{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationSyncObjectPending(cfg MetricConfig) metricActiveDirectoryDsReplicationSyncObjectPending {
+	m := metricActiveDirectoryDsReplicationSyncObjectPending{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -987,7 +873,7 @@ func newMetricActiveDirectoryDsReplicationSyncObjectPending(settings MetricSetti
 
 type metricActiveDirectoryDsReplicationSyncRequestCount struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -1003,7 +889,7 @@ func (m *metricActiveDirectoryDsReplicationSyncRequestCount) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationSyncRequestCount) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64, syncResultAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -1022,16 +908,16 @@ func (m *metricActiveDirectoryDsReplicationSyncRequestCount) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationSyncRequestCount) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationSyncRequestCount(settings MetricSettings) metricActiveDirectoryDsReplicationSyncRequestCount {
-	m := metricActiveDirectoryDsReplicationSyncRequestCount{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationSyncRequestCount(cfg MetricConfig) metricActiveDirectoryDsReplicationSyncRequestCount {
+	m := metricActiveDirectoryDsReplicationSyncRequestCount{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -1040,7 +926,7 @@ func newMetricActiveDirectoryDsReplicationSyncRequestCount(settings MetricSettin
 
 type metricActiveDirectoryDsReplicationValueRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -1056,7 +942,7 @@ func (m *metricActiveDirectoryDsReplicationValueRate) init() {
 }
 
 func (m *metricActiveDirectoryDsReplicationValueRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64, directionAttributeValue string, valueTypeAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -1076,16 +962,16 @@ func (m *metricActiveDirectoryDsReplicationValueRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsReplicationValueRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsReplicationValueRate(settings MetricSettings) metricActiveDirectoryDsReplicationValueRate {
-	m := metricActiveDirectoryDsReplicationValueRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsReplicationValueRate(cfg MetricConfig) metricActiveDirectoryDsReplicationValueRate {
+	m := metricActiveDirectoryDsReplicationValueRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -1094,7 +980,7 @@ func newMetricActiveDirectoryDsReplicationValueRate(settings MetricSettings) met
 
 type metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -1109,7 +995,7 @@ func (m *metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued) init(
 }
 
 func (m *metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -1127,16 +1013,16 @@ func (m *metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued) updat
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued(settings MetricSettings) metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued {
-	m := metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued(cfg MetricConfig) metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued {
+	m := metricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -1145,7 +1031,7 @@ func newMetricActiveDirectoryDsSecurityDescriptorPropagationsEventQueued(setting
 
 type metricActiveDirectoryDsSuboperationRate struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -1161,7 +1047,7 @@ func (m *metricActiveDirectoryDsSuboperationRate) init() {
 }
 
 func (m *metricActiveDirectoryDsSuboperationRate) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val float64, suboperationTypeAttributeValue string) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -1180,16 +1066,16 @@ func (m *metricActiveDirectoryDsSuboperationRate) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsSuboperationRate) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsSuboperationRate(settings MetricSettings) metricActiveDirectoryDsSuboperationRate {
-	m := metricActiveDirectoryDsSuboperationRate{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsSuboperationRate(cfg MetricConfig) metricActiveDirectoryDsSuboperationRate {
+	m := metricActiveDirectoryDsSuboperationRate{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
@@ -1198,7 +1084,7 @@ func newMetricActiveDirectoryDsSuboperationRate(settings MetricSettings) metricA
 
 type metricActiveDirectoryDsThreadCount struct {
 	data     pmetric.Metric // data buffer for generated metric.
-	settings MetricSettings // metric settings provided by user.
+	config   MetricConfig   // metric config provided by user.
 	capacity int            // max observed number of data points added to the metric.
 }
 
@@ -1213,7 +1099,7 @@ func (m *metricActiveDirectoryDsThreadCount) init() {
 }
 
 func (m *metricActiveDirectoryDsThreadCount) recordDataPoint(start pcommon.Timestamp, ts pcommon.Timestamp, val int64) {
-	if !m.settings.Enabled {
+	if !m.config.Enabled {
 		return
 	}
 	dp := m.data.Sum().DataPoints().AppendEmpty()
@@ -1231,37 +1117,30 @@ func (m *metricActiveDirectoryDsThreadCount) updateCapacity() {
 
 // emit appends recorded metric data to a metrics slice and prepares it for recording another set of data points.
 func (m *metricActiveDirectoryDsThreadCount) emit(metrics pmetric.MetricSlice) {
-	if m.settings.Enabled && m.data.Sum().DataPoints().Len() > 0 {
+	if m.config.Enabled && m.data.Sum().DataPoints().Len() > 0 {
 		m.updateCapacity()
 		m.data.MoveTo(metrics.AppendEmpty())
 		m.init()
 	}
 }
 
-func newMetricActiveDirectoryDsThreadCount(settings MetricSettings) metricActiveDirectoryDsThreadCount {
-	m := metricActiveDirectoryDsThreadCount{settings: settings}
-	if settings.Enabled {
+func newMetricActiveDirectoryDsThreadCount(cfg MetricConfig) metricActiveDirectoryDsThreadCount {
+	m := metricActiveDirectoryDsThreadCount{config: cfg}
+	if cfg.Enabled {
 		m.data = pmetric.NewMetric()
 		m.init()
 	}
 	return m
 }
 
-// MetricsBuilderConfig is a structural subset of an otherwise 1-1 copy of metadata.yaml
-type MetricsBuilderConfig struct {
-	Metrics            MetricsSettings            `mapstructure:"metrics"`
-	ResourceAttributes ResourceAttributesSettings `mapstructure:"resource_attributes"`
-}
-
 // MetricsBuilder provides an interface for scrapers to report metrics while taking care of all the transformations
-// required to produce metric representation defined in metadata and user settings.
+// required to produce metric representation defined in metadata and user config.
 type MetricsBuilder struct {
-	startTime                                                        pcommon.Timestamp   // start time that will be applied to all recorded data points.
-	metricsCapacity                                                  int                 // maximum observed number of metrics per resource.
-	resourceCapacity                                                 int                 // maximum observed number of resource attributes.
-	metricsBuffer                                                    pmetric.Metrics     // accumulates metrics data before emitting.
-	buildInfo                                                        component.BuildInfo // contains version information
-	resourceAttributesSettings                                       ResourceAttributesSettings
+	config                                                           MetricsBuilderConfig // config of the metrics builder.
+	startTime                                                        pcommon.Timestamp    // start time that will be applied to all recorded data points.
+	metricsCapacity                                                  int                  // maximum observed number of metrics per resource.
+	metricsBuffer                                                    pmetric.Metrics      // accumulates metrics data before emitting.
+	buildInfo                                                        component.BuildInfo  // contains version information.
 	metricActiveDirectoryDsBindRate                                  metricActiveDirectoryDsBindRate
 	metricActiveDirectoryDsLdapBindLastSuccessfulTime                metricActiveDirectoryDsLdapBindLastSuccessfulTime
 	metricActiveDirectoryDsLdapBindRate                              metricActiveDirectoryDsLdapBindRate
@@ -1282,36 +1161,29 @@ type MetricsBuilder struct {
 	metricActiveDirectoryDsThreadCount                               metricActiveDirectoryDsThreadCount
 }
 
-// metricBuilderOption applies changes to default metrics builder.
-type metricBuilderOption func(*MetricsBuilder)
+// MetricBuilderOption applies changes to default metrics builder.
+type MetricBuilderOption interface {
+	apply(*MetricsBuilder)
+}
+
+type metricBuilderOptionFunc func(mb *MetricsBuilder)
+
+func (mbof metricBuilderOptionFunc) apply(mb *MetricsBuilder) {
+	mbof(mb)
+}
 
 // WithStartTime sets startTime on the metrics builder.
-func WithStartTime(startTime pcommon.Timestamp) metricBuilderOption {
-	return func(mb *MetricsBuilder) {
+func WithStartTime(startTime pcommon.Timestamp) MetricBuilderOption {
+	return metricBuilderOptionFunc(func(mb *MetricsBuilder) {
 		mb.startTime = startTime
-	}
+	})
 }
-
-func DefaultMetricsBuilderConfig() MetricsBuilderConfig {
-	return MetricsBuilderConfig{
-		Metrics:            DefaultMetricsSettings(),
-		ResourceAttributes: DefaultResourceAttributesSettings(),
-	}
-}
-
-func NewMetricsBuilderConfig(ms MetricsSettings, ras ResourceAttributesSettings) MetricsBuilderConfig {
-	return MetricsBuilderConfig{
-		Metrics:            ms,
-		ResourceAttributes: ras,
-	}
-}
-
-func NewMetricsBuilder(mbc MetricsBuilderConfig, settings receiver.CreateSettings, options ...metricBuilderOption) *MetricsBuilder {
+func NewMetricsBuilder(mbc MetricsBuilderConfig, settings receiver.Settings, options ...MetricBuilderOption) *MetricsBuilder {
 	mb := &MetricsBuilder{
+		config:                          mbc,
 		startTime:                       pcommon.NewTimestampFromTime(time.Now()),
 		metricsBuffer:                   pmetric.NewMetrics(),
 		buildInfo:                       settings.BuildInfo,
-		resourceAttributesSettings:      mbc.ResourceAttributes,
 		metricActiveDirectoryDsBindRate: newMetricActiveDirectoryDsBindRate(mbc.Metrics.ActiveDirectoryDsBindRate),
 		metricActiveDirectoryDsLdapBindLastSuccessfulTime:                newMetricActiveDirectoryDsLdapBindLastSuccessfulTime(mbc.Metrics.ActiveDirectoryDsLdapBindLastSuccessfulTime),
 		metricActiveDirectoryDsLdapBindRate:                              newMetricActiveDirectoryDsLdapBindRate(mbc.Metrics.ActiveDirectoryDsLdapBindRate),
@@ -1331,8 +1203,9 @@ func NewMetricsBuilder(mbc MetricsBuilderConfig, settings receiver.CreateSetting
 		metricActiveDirectoryDsSuboperationRate:                          newMetricActiveDirectoryDsSuboperationRate(mbc.Metrics.ActiveDirectoryDsSuboperationRate),
 		metricActiveDirectoryDsThreadCount:                               newMetricActiveDirectoryDsThreadCount(mbc.Metrics.ActiveDirectoryDsThreadCount),
 	}
+
 	for _, op := range options {
-		op(mb)
+		op.apply(mb)
 	}
 	return mb
 }
@@ -1342,18 +1215,31 @@ func (mb *MetricsBuilder) updateCapacity(rm pmetric.ResourceMetrics) {
 	if mb.metricsCapacity < rm.ScopeMetrics().At(0).Metrics().Len() {
 		mb.metricsCapacity = rm.ScopeMetrics().At(0).Metrics().Len()
 	}
-	if mb.resourceCapacity < rm.Resource().Attributes().Len() {
-		mb.resourceCapacity = rm.Resource().Attributes().Len()
-	}
 }
 
 // ResourceMetricsOption applies changes to provided resource metrics.
-type ResourceMetricsOption func(ResourceAttributesSettings, pmetric.ResourceMetrics)
+type ResourceMetricsOption interface {
+	apply(pmetric.ResourceMetrics)
+}
+
+type resourceMetricsOptionFunc func(pmetric.ResourceMetrics)
+
+func (rmof resourceMetricsOptionFunc) apply(rm pmetric.ResourceMetrics) {
+	rmof(rm)
+}
+
+// WithResource sets the provided resource on the emitted ResourceMetrics.
+// It's recommended to use ResourceBuilder to create the resource.
+func WithResource(res pcommon.Resource) ResourceMetricsOption {
+	return resourceMetricsOptionFunc(func(rm pmetric.ResourceMetrics) {
+		res.CopyTo(rm.Resource())
+	})
+}
 
 // WithStartTimeOverride overrides start time for all the resource metrics data points.
 // This option should be only used if different start time has to be set on metrics coming from different resources.
 func WithStartTimeOverride(start pcommon.Timestamp) ResourceMetricsOption {
-	return func(ras ResourceAttributesSettings, rm pmetric.ResourceMetrics) {
+	return resourceMetricsOptionFunc(func(rm pmetric.ResourceMetrics) {
 		var dps pmetric.NumberDataPointSlice
 		metrics := rm.ScopeMetrics().At(0).Metrics()
 		for i := 0; i < metrics.Len(); i++ {
@@ -1367,7 +1253,7 @@ func WithStartTimeOverride(start pcommon.Timestamp) ResourceMetricsOption {
 				dps.At(j).SetStartTimestamp(start)
 			}
 		}
-	}
+	})
 }
 
 // EmitForResource saves all the generated metrics under a new resource and updates the internal state to be ready for
@@ -1375,11 +1261,10 @@ func WithStartTimeOverride(start pcommon.Timestamp) ResourceMetricsOption {
 // needs to emit metrics from several resources. Otherwise calling this function is not required,
 // just `Emit` function can be called instead.
 // Resource attributes should be provided as ResourceMetricsOption arguments.
-func (mb *MetricsBuilder) EmitForResource(rmo ...ResourceMetricsOption) {
+func (mb *MetricsBuilder) EmitForResource(options ...ResourceMetricsOption) {
 	rm := pmetric.NewResourceMetrics()
-	rm.Resource().Attributes().EnsureCapacity(mb.resourceCapacity)
 	ils := rm.ScopeMetrics().AppendEmpty()
-	ils.Scope().SetName("otelcol/activedirectorydsreceiver")
+	ils.Scope().SetName(ScopeName)
 	ils.Scope().SetVersion(mb.buildInfo.Version)
 	ils.Metrics().EnsureCapacity(mb.metricsCapacity)
 	mb.metricActiveDirectoryDsBindRate.emit(ils.Metrics())
@@ -1401,9 +1286,10 @@ func (mb *MetricsBuilder) EmitForResource(rmo ...ResourceMetricsOption) {
 	mb.metricActiveDirectoryDsSuboperationRate.emit(ils.Metrics())
 	mb.metricActiveDirectoryDsThreadCount.emit(ils.Metrics())
 
-	for _, op := range rmo {
-		op(mb.resourceAttributesSettings, rm)
+	for _, op := range options {
+		op.apply(rm)
 	}
+
 	if ils.Metrics().Len() > 0 {
 		mb.updateCapacity(rm)
 		rm.MoveTo(mb.metricsBuffer.ResourceMetrics().AppendEmpty())
@@ -1412,9 +1298,9 @@ func (mb *MetricsBuilder) EmitForResource(rmo ...ResourceMetricsOption) {
 
 // Emit returns all the metrics accumulated by the metrics builder and updates the internal state to be ready for
 // recording another set of metrics. This function will be responsible for applying all the transformations required to
-// produce metric representation defined in metadata and user settings, e.g. delta or cumulative.
-func (mb *MetricsBuilder) Emit(rmo ...ResourceMetricsOption) pmetric.Metrics {
-	mb.EmitForResource(rmo...)
+// produce metric representation defined in metadata and user config, e.g. delta or cumulative.
+func (mb *MetricsBuilder) Emit(options ...ResourceMetricsOption) pmetric.Metrics {
+	mb.EmitForResource(options...)
 	metrics := mb.metricsBuffer
 	mb.metricsBuffer = pmetric.NewMetrics()
 	return metrics
@@ -1512,9 +1398,9 @@ func (mb *MetricsBuilder) RecordActiveDirectoryDsThreadCountDataPoint(ts pcommon
 
 // Reset resets metrics builder to its initial state. It should be used when external metrics source is restarted,
 // and metrics builder should update its startTime and reset it's internal state accordingly.
-func (mb *MetricsBuilder) Reset(options ...metricBuilderOption) {
+func (mb *MetricsBuilder) Reset(options ...MetricBuilderOption) {
 	mb.startTime = pcommon.NewTimestampFromTime(time.Now())
 	for _, op := range options {
-		op(mb)
+		op.apply(mb)
 	}
 }

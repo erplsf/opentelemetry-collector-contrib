@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package coralogixexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/coralogixexporter"
 
@@ -21,10 +10,12 @@ import (
 	"runtime"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configopaque"
-	exp "go.opentelemetry.io/collector/exporter"
+	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -43,7 +34,7 @@ type tracesExporter struct {
 	userAgent string
 }
 
-func newTracesExporter(cfg component.Config, set exp.CreateSettings) (*tracesExporter, error) {
+func newTracesExporter(cfg component.Config, set exporter.Settings) (*tracesExporter, error) {
 	oCfg, ok := cfg.(*Config)
 	if !ok {
 		return nil, fmt.Errorf("invalid config exporter, expect type: %T, got: %T", &Config{}, cfg)
@@ -59,14 +50,13 @@ func newTracesExporter(cfg component.Config, set exp.CreateSettings) (*tracesExp
 }
 
 func (e *tracesExporter) start(ctx context.Context, host component.Host) (err error) {
-
 	switch {
 	case !isEmpty(e.config.Traces.Endpoint):
-		if e.clientConn, err = e.config.Traces.ToClientConn(ctx, host, e.settings, grpc.WithUserAgent(e.userAgent)); err != nil {
+		if e.clientConn, err = e.config.Traces.ToClientConn(ctx, host, e.settings, configgrpc.WithGrpcDialOption(grpc.WithUserAgent(e.userAgent))); err != nil {
 			return err
 		}
 	case !isEmpty(e.config.Domain):
-		if e.clientConn, err = e.config.getDomainGrpcSettings().ToClientConn(ctx, host, e.settings, grpc.WithUserAgent(e.userAgent)); err != nil {
+		if e.clientConn, err = e.config.getDomainGrpcSettings().ToClientConn(ctx, host, e.settings, configgrpc.WithGrpcDialOption(grpc.WithUserAgent(e.userAgent))); err != nil {
 			return err
 		}
 	}
@@ -85,23 +75,30 @@ func (e *tracesExporter) start(ctx context.Context, host component.Host) (err er
 }
 
 func (e *tracesExporter) pushTraces(ctx context.Context, td ptrace.Traces) error {
-
 	rss := td.ResourceSpans()
 	for i := 0; i < rss.Len(); i++ {
 		resourceSpan := rss.At(i)
 		appName, subsystem := e.config.getMetadataFromResource(resourceSpan.Resource())
 		resourceSpan.Resource().Attributes().PutStr(cxAppNameAttrName, appName)
 		resourceSpan.Resource().Attributes().PutStr(cxSubsystemNameAttrName, subsystem)
-
 	}
 
-	_, err := e.traceExporter.Export(e.enhanceContext(ctx), ptraceotlp.NewExportRequestFromTraces(td), e.callOptions...)
+	resp, err := e.traceExporter.Export(e.enhanceContext(ctx), ptraceotlp.NewExportRequestFromTraces(td), e.callOptions...)
 	if err != nil {
 		return processError(err)
 	}
 
+	partialSuccess := resp.PartialSuccess()
+	if !(partialSuccess.ErrorMessage() == "" && partialSuccess.RejectedSpans() == 0) {
+		e.settings.Logger.Error("Partial success response from Coralogix",
+			zap.String("message", partialSuccess.ErrorMessage()),
+			zap.Int64("rejected_spans", partialSuccess.RejectedSpans()),
+		)
+	}
+
 	return nil
 }
+
 func (e *tracesExporter) shutdown(context.Context) error {
 	if e.clientConn == nil {
 		return nil

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package plogtest
 
@@ -25,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/multierr"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
 )
 
 func TestCompareLogs(t *testing.T) {
@@ -143,6 +132,22 @@ func TestCompareLogs(t *testing.T) {
 				IgnoreObservedTimestamp(),
 			},
 			withoutOptions: errors.New(`resource "map[]": scope "collector": log record "map[]": observed timestamp doesn't match expected: 11651379494838206465, actual: 11651379494838206464`),
+			withOptions:    nil,
+		},
+		{
+			name: "ignore-timestamp",
+			compareOptions: []CompareLogsOption{
+				IgnoreTimestamp(),
+			},
+			withoutOptions: errors.New(`resource "map[]": scope "collector": log record "map[]": timestamp doesn't match expected: 11651379494838206465, actual: 11651379494838206464`),
+			withOptions:    nil,
+		},
+		{
+			name: "ignore-log-record-attribute-value",
+			compareOptions: []CompareLogsOption{
+				IgnoreLogRecordAttributeValue("Key1"),
+			},
+			withoutOptions: errors.New(`resource "map[]": scope "": missing expected log record: map[Key1:Val2]; resource "map[]": scope "": unexpected log record: map[Key1:Val1]`),
 			withOptions:    nil,
 		},
 	}

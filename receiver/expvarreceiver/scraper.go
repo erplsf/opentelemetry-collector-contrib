@@ -1,22 +1,12 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package expvarreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/expvarreceiver"
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,12 +28,12 @@ type expVar struct {
 
 type expVarScraper struct {
 	cfg    *Config
-	set    *receiver.CreateSettings
+	set    *receiver.Settings
 	client *http.Client
 	mb     *metadata.MetricsBuilder
 }
 
-func newExpVarScraper(cfg *Config, set receiver.CreateSettings) *expVarScraper {
+func newExpVarScraper(cfg *Config, set receiver.Settings) *expVarScraper {
 	return &expVarScraper{
 		cfg: cfg,
 		set: &set,
@@ -51,8 +41,8 @@ func newExpVarScraper(cfg *Config, set receiver.CreateSettings) *expVarScraper {
 	}
 }
 
-func (e *expVarScraper) start(_ context.Context, host component.Host) error {
-	client, err := e.cfg.HTTPClientSettings.ToClient(host, e.set.TelemetrySettings)
+func (e *expVarScraper) start(ctx context.Context, host component.Host) error {
+	client, err := e.cfg.ClientConfig.ToClient(ctx, host, e.set.TelemetrySettings)
 	if err != nil {
 		return err
 	}
@@ -62,7 +52,7 @@ func (e *expVarScraper) start(_ context.Context, host component.Host) error {
 
 func (e *expVarScraper) scrape(ctx context.Context) (pmetric.Metrics, error) {
 	emptyMetrics := pmetric.NewMetrics()
-	req, err := http.NewRequestWithContext(ctx, "GET", e.cfg.Endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.cfg.Endpoint, nil)
 	if err != nil {
 		return emptyMetrics, err
 	}
@@ -81,7 +71,7 @@ func (e *expVarScraper) scrape(ctx context.Context) (pmetric.Metrics, error) {
 	}
 	memStats := result.MemStats
 	if memStats == nil {
-		return emptyMetrics, fmt.Errorf("unmarshalled memstats data is nil")
+		return emptyMetrics, errors.New("unmarshalled memstats data is nil")
 	}
 
 	now := pcommon.NewTimestampFromTime(time.Now())

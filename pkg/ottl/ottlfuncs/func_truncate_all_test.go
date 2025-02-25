@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package ottlfuncs
 
@@ -31,8 +20,8 @@ func Test_truncateAll(t *testing.T) {
 	input.PutInt("test2", 3)
 	input.PutBool("test3", true)
 
-	target := &ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx pcommon.Map) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[pcommon.Map]{
+		Getter: func(_ context.Context, tCtx pcommon.Map) (any, error) {
 			return tCtx, nil
 		},
 	}
@@ -105,20 +94,20 @@ func Test_truncateAll(t *testing.T) {
 }
 
 func Test_truncateAll_validation(t *testing.T) {
-	_, err := TruncateAll[interface{}](&ottl.StandardTypeGetter[interface{}, pcommon.Map]{}, -1)
+	_, err := TruncateAll[any](&ottl.StandardPMapGetter[any]{}, -1)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "invalid limit for truncate_all function, -1 cannot be negative")
 }
 
 func Test_truncateAll_bad_input(t *testing.T) {
 	input := pcommon.NewValueStr("not a map")
-	target := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, tCtx any) (any, error) {
 			return tCtx, nil
 		},
 	}
 
-	exprFunc, err := TruncateAll[interface{}](target, 1)
+	exprFunc, err := TruncateAll[any](target, 1)
 	assert.NoError(t, err)
 
 	_, err = exprFunc(nil, input)
@@ -126,13 +115,13 @@ func Test_truncateAll_bad_input(t *testing.T) {
 }
 
 func Test_truncateAll_get_nil(t *testing.T) {
-	target := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, tCtx any) (any, error) {
 			return tCtx, nil
 		},
 	}
 
-	exprFunc, err := TruncateAll[interface{}](target, 1)
+	exprFunc, err := TruncateAll[any](target, 1)
 	assert.NoError(t, err)
 
 	_, err = exprFunc(nil, nil)

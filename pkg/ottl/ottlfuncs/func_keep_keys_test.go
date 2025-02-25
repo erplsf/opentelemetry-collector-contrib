@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package ottlfuncs
 
@@ -30,8 +19,8 @@ func Test_keepKeys(t *testing.T) {
 	input.PutInt("test2", 3)
 	input.PutBool("test3", true)
 
-	target := &ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx pcommon.Map) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[pcommon.Map]{
+		Getter: func(_ context.Context, tCtx pcommon.Map) (any, error) {
 			return tCtx, nil
 		},
 	}
@@ -63,13 +52,13 @@ func Test_keepKeys(t *testing.T) {
 			name:   "keep none",
 			target: target,
 			keys:   []string{},
-			want:   func(expectedMap pcommon.Map) {},
+			want:   func(_ pcommon.Map) {},
 		},
 		{
 			name:   "no match",
 			target: target,
 			keys:   []string{"no match"},
-			want:   func(expectedMap pcommon.Map) {},
+			want:   func(_ pcommon.Map) {},
 		},
 	}
 	for _, tt := range tests {
@@ -77,11 +66,10 @@ func Test_keepKeys(t *testing.T) {
 			scenarioMap := pcommon.NewMap()
 			input.CopyTo(scenarioMap)
 
-			exprFunc, err := KeepKeys(tt.target, tt.keys)
-			assert.NoError(t, err)
+			exprFunc := keepKeys(tt.target, tt.keys)
 
-			_, err = exprFunc(nil, scenarioMap)
-			assert.Nil(t, err)
+			_, err := exprFunc(nil, scenarioMap)
+			assert.NoError(t, err)
 
 			expected := pcommon.NewMap()
 			tt.want(expected)
@@ -93,32 +81,30 @@ func Test_keepKeys(t *testing.T) {
 
 func Test_keepKeys_bad_input(t *testing.T) {
 	input := pcommon.NewValueStr("not a map")
-	target := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, tCtx any) (any, error) {
 			return tCtx, nil
 		},
 	}
 
 	keys := []string{"anything"}
 
-	exprFunc, err := KeepKeys[interface{}](target, keys)
-	assert.NoError(t, err)
+	exprFunc := keepKeys[any](target, keys)
 
-	_, err = exprFunc(nil, input)
+	_, err := exprFunc(nil, input)
 	assert.Error(t, err)
 }
 
 func Test_keepKeys_get_nil(t *testing.T) {
-	target := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, tCtx any) (any, error) {
 			return tCtx, nil
 		},
 	}
 
 	keys := []string{"anything"}
 
-	exprFunc, err := KeepKeys[interface{}](target, keys)
-	assert.NoError(t, err)
-	_, err = exprFunc(nil, nil)
+	exprFunc := keepKeys[any](target, keys)
+	_, err := exprFunc(nil, nil)
 	assert.Error(t, err)
 }

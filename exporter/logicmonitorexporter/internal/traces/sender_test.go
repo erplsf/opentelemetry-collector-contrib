@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package traces
 
@@ -25,9 +14,8 @@ import (
 	"github.com/logicmonitor/lm-data-sdk-go/utils"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/consumer/consumererror"
+	"go.opentelemetry.io/collector/pdata/testdata"
 	"go.uber.org/zap"
-
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/testdata"
 )
 
 func TestSendTraces(t *testing.T) {
@@ -37,7 +25,7 @@ func TestSendTraces(t *testing.T) {
 		BearerToken: "testToken",
 	}
 	t.Run("should not return error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			response := lmsdktraces.LMTraceIngestResponse{
 				Success: true,
 				Message: "Accepted",
@@ -52,13 +40,13 @@ func TestSendTraces(t *testing.T) {
 		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
 		assert.NoError(t, err)
 
-		err = sender.SendTraces(ctx, testdata.GenerateTracesOneSpan())
+		err = sender.SendTraces(ctx, testdata.GenerateTraces(1))
 		cancel()
 		assert.NoError(t, err)
 	})
 
 	t.Run("should return permanent failure error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			response := lmsdktraces.LMTraceIngestResponse{
 				Success: false,
 				Message: "The request is invalid. For example, it may be missing headers or the request body is incorrectly formatted.",
@@ -73,14 +61,14 @@ func TestSendTraces(t *testing.T) {
 		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
 		assert.NoError(t, err)
 
-		err = sender.SendTraces(ctx, testdata.GenerateTracesOneSpan())
+		err = sender.SendTraces(ctx, testdata.GenerateTraces(1))
 		cancel()
 		assert.Error(t, err)
-		assert.Equal(t, true, consumererror.IsPermanent(err))
+		assert.True(t, consumererror.IsPermanent(err))
 	})
 
 	t.Run("should not return permanent failure error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			response := lmsdktraces.LMTraceIngestResponse{
 				Success: false,
 				Message: "A dependency failed to respond within a reasonable time.",
@@ -95,9 +83,9 @@ func TestSendTraces(t *testing.T) {
 		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
 		assert.NoError(t, err)
 
-		err = sender.SendTraces(ctx, testdata.GenerateTracesOneSpan())
+		err = sender.SendTraces(ctx, testdata.GenerateTraces(1))
 		cancel()
 		assert.Error(t, err)
-		assert.Equal(t, false, consumererror.IsPermanent(err))
+		assert.False(t, consumererror.IsPermanent(err))
 	})
 }

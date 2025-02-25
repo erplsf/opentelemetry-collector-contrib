@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package memoryscraper // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver/internal/scraper/memoryscraper"
 
@@ -20,13 +9,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/host"
-	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/mem"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/receiver"
-	"go.opentelemetry.io/collector/receiver/scrapererror"
+	"go.opentelemetry.io/collector/scraper"
+	"go.opentelemetry.io/collector/scraper/scrapererror"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver/internal/scraper/memoryscraper/internal/metadata"
 )
@@ -36,23 +25,23 @@ const metricsLen = 2
 var ErrInvalidTotalMem = errors.New("invalid total memory")
 
 // scraper for Memory Metrics
-type scraper struct {
-	settings receiver.CreateSettings
+type memoryScraper struct {
+	settings scraper.Settings
 	config   *Config
 	mb       *metadata.MetricsBuilder
 
 	// for mocking gopsutil mem.VirtualMemory
-	bootTime      func() (uint64, error)
-	virtualMemory func() (*mem.VirtualMemoryStat, error)
+	bootTime      func(context.Context) (uint64, error)
+	virtualMemory func(context.Context) (*mem.VirtualMemoryStat, error)
 }
 
 // newMemoryScraper creates a Memory Scraper
-func newMemoryScraper(_ context.Context, settings receiver.CreateSettings, cfg *Config) *scraper {
-	return &scraper{settings: settings, config: cfg, bootTime: host.BootTime, virtualMemory: mem.VirtualMemory}
+func newMemoryScraper(_ context.Context, settings scraper.Settings, cfg *Config) *memoryScraper {
+	return &memoryScraper{settings: settings, config: cfg, bootTime: host.BootTimeWithContext, virtualMemory: mem.VirtualMemoryWithContext}
 }
 
-func (s *scraper) start(context.Context, component.Host) error {
-	bootTime, err := s.bootTime()
+func (s *memoryScraper) start(ctx context.Context, _ component.Host) error {
+	bootTime, err := s.bootTime(ctx)
 	if err != nil {
 		return err
 	}
@@ -61,9 +50,13 @@ func (s *scraper) start(context.Context, component.Host) error {
 	return nil
 }
 
-func (s *scraper) scrape(_ context.Context) (pmetric.Metrics, error) {
+func (s *memoryScraper) recordMemoryLimitMetric(now pcommon.Timestamp, memInfo *mem.VirtualMemoryStat) {
+	s.mb.RecordSystemMemoryLimitDataPoint(now, int64(memInfo.Total))
+}
+
+func (s *memoryScraper) scrape(ctx context.Context) (pmetric.Metrics, error) {
 	now := pcommon.NewTimestampFromTime(time.Now())
-	memInfo, err := s.virtualMemory()
+	memInfo, err := s.virtualMemory(ctx)
 	if err != nil {
 		return pmetric.NewMetrics(), scrapererror.NewPartialScrapeError(err, metricsLen)
 	}
@@ -75,6 +68,8 @@ func (s *scraper) scrape(_ context.Context) (pmetric.Metrics, error) {
 				memInfo.Total), metricsLen)
 		}
 		s.recordMemoryUtilizationMetric(now, memInfo)
+		s.recordMemoryLimitMetric(now, memInfo)
+		s.recordSystemSpecificMetrics(now, memInfo)
 	}
 
 	return s.mb.Emit(), nil

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package logs
 
@@ -32,13 +21,8 @@ import (
 )
 
 func TestSendLogs(t *testing.T) {
-	authParams := utils.AuthParams{
-		AccessID:    "testId",
-		AccessKey:   "testKey",
-		BearerToken: "testToken",
-	}
 	t.Run("should not return error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			response := lmsdklogs.LMLogIngestResponse{
 				Success: true,
 				Message: "Accepted",
@@ -50,17 +34,17 @@ func TestSendLogs(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		sender, err := NewSender(ctx, zap.NewNop(), buildLogIngestTestOpts(ts.URL, ts.Client())...)
 		assert.NoError(t, err)
 
-		logInput := translator.ConvertToLMLogInput("test msg", utils.NewTimestampFromTime(time.Now()).String(), map[string]interface{}{"system.hostname": "test"}, map[string]interface{}{"cloud.provider": "aws"})
+		logInput := translator.ConvertToLMLogInput("test msg", utils.NewTimestampFromTime(time.Now()).String(), map[string]any{"system.hostname": "test"}, map[string]any{"cloud.provider": "aws"})
 		err = sender.SendLogs(ctx, []model.LogInput{logInput})
 		cancel()
 		assert.NoError(t, err)
 	})
 
 	t.Run("should return permanent failure error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			response := lmsdklogs.LMLogIngestResponse{
 				Success: false,
 				Message: "The request is invalid. For example, it may be missing headers or the request body is incorrectly formatted.",
@@ -72,18 +56,18 @@ func TestSendLogs(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		sender, err := NewSender(ctx, zap.NewNop(), buildLogIngestTestOpts(ts.URL, ts.Client())...)
 		assert.NoError(t, err)
 
-		logInput := translator.ConvertToLMLogInput("test msg", utils.NewTimestampFromTime(time.Now()).String(), map[string]interface{}{"system.hostname": "test"}, map[string]interface{}{"cloud.provider": "aws"})
+		logInput := translator.ConvertToLMLogInput("test msg", utils.NewTimestampFromTime(time.Now()).String(), map[string]any{"system.hostname": "test"}, map[string]any{"cloud.provider": "aws"})
 		err = sender.SendLogs(ctx, []model.LogInput{logInput})
 		cancel()
 		assert.Error(t, err)
-		assert.Equal(t, true, consumererror.IsPermanent(err))
+		assert.True(t, consumererror.IsPermanent(err))
 	})
 
 	t.Run("should not return permanent failure error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			response := lmsdklogs.LMLogIngestResponse{
 				Success: false,
 				Message: "A dependency failed to respond within a reasonable time.",
@@ -95,13 +79,29 @@ func TestSendLogs(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		sender, err := NewSender(ctx, zap.NewNop(), buildLogIngestTestOpts(ts.URL, ts.Client())...)
 		assert.NoError(t, err)
 
-		logInput := translator.ConvertToLMLogInput("test msg", utils.NewTimestampFromTime(time.Now()).String(), map[string]interface{}{"system.hostname": "test"}, map[string]interface{}{"cloud.provider": "aws"})
+		logInput := translator.ConvertToLMLogInput("test msg", utils.NewTimestampFromTime(time.Now()).String(), map[string]any{"system.hostname": "test"}, map[string]any{"cloud.provider": "aws"})
 		err = sender.SendLogs(ctx, []model.LogInput{logInput})
 		cancel()
 		assert.Error(t, err)
-		assert.Equal(t, false, consumererror.IsPermanent(err))
+		assert.False(t, consumererror.IsPermanent(err))
 	})
+}
+
+func buildLogIngestTestOpts(endpoint string, client *http.Client) []lmsdklogs.Option {
+	authParams := utils.AuthParams{
+		AccessID:    "testId",
+		AccessKey:   "testKey",
+		BearerToken: "testToken",
+	}
+
+	opts := []lmsdklogs.Option{
+		lmsdklogs.WithLogBatchingDisabled(),
+		lmsdklogs.WithAuthentication(authParams),
+		lmsdklogs.WithHTTPClient(client),
+		lmsdklogs.WithEndpoint(endpoint),
+	}
+	return opts
 }

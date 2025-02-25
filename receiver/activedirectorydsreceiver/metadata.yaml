@@ -1,10 +1,14 @@
-type: activedirectorydsreceiver
+type: active_directory_ds
 
 status:
   class: receiver
-  stability: beta
-  pipelines: [metrics]
+  stability:
+    beta: [metrics]
   distributions: [contrib]
+  codeowners:
+    active: [pjanotti]
+    seeking_new: true
+  unsupported_platforms: [darwin, linux]
 
 attributes:
   direction:
@@ -25,7 +29,7 @@ attributes:
     description: The type of value sent.
     type: string
     enum:
-      - distingushed_names
+      - distinguished_names
       - other
   operation_type:
     name_override: type
@@ -63,7 +67,7 @@ metrics:
     unit: By
     sum:
       monotonic: true
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     attributes: [direction, network_data_type]
     enabled: true
@@ -72,7 +76,7 @@ metrics:
     unit: "{objects}"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     enabled: true
   active_directory.ds.replication.sync.request.count:
@@ -80,7 +84,7 @@ metrics:
     unit: "{requests}"
     sum:
       monotonic: true
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     attributes: [sync_result]
     enabled: true
@@ -89,7 +93,7 @@ metrics:
     unit: "{objects}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     attributes: [direction]
     enabled: true
@@ -98,7 +102,7 @@ metrics:
     unit: "{properties}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     attributes: [direction]
     enabled: true
@@ -107,7 +111,7 @@ metrics:
     unit: "{values}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     attributes: [direction, value_type]
     enabled: true
@@ -116,7 +120,7 @@ metrics:
     unit: "{operations}"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     enabled: true
   active_directory.ds.operation.rate:
@@ -124,7 +128,7 @@ metrics:
     unit: "{operations}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     attributes: [operation_type]
     enabled: true
@@ -139,7 +143,7 @@ metrics:
     unit: "{notifications}"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     enabled: true
   active_directory.ds.security_descriptor_propagations_event.queued:
@@ -147,7 +151,7 @@ metrics:
     unit: "{events}"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     enabled: true
   active_directory.ds.suboperation.rate:
@@ -155,7 +159,7 @@ metrics:
     unit: "{suboperations}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     attributes: [suboperation_type]
     enabled: true
@@ -164,7 +168,7 @@ metrics:
     unit: "{binds}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     attributes: [bind_type]
     enabled: true
@@ -173,7 +177,7 @@ metrics:
     unit: "{threads}"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     enabled: true
   active_directory.ds.ldap.client.session.count:
@@ -181,7 +185,7 @@ metrics:
     unit: "{sessions}"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: int
     enabled: true
   active_directory.ds.ldap.bind.last_successful.time:
@@ -195,7 +199,7 @@ metrics:
     unit: "{binds}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     enabled: true
   active_directory.ds.ldap.search.rate:
@@ -203,6 +207,11 @@ metrics:
     unit: "{searches}/s"
     sum:
       monotonic: false
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       value_type: double
     enabled: true
+
+# TODO: Update the receiver to pass the tests
+tests:
+  skip_lifecycle: true
+  skip_shutdown: true

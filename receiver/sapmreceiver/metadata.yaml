@@ -1,0 +1,10 @@
+type: sapm
+
+status:
+  class: receiver
+  stability:
+    deprecated: [traces]
+  distributions: [contrib]
+  codeowners:
+    active: [atoulme]
+    seeking_new: true

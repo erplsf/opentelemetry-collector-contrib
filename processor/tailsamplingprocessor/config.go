@@ -1,21 +1,12 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package tailsamplingprocessor // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/tailsamplingprocessor"
 
 import (
 	"time"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
 )
 
 // PolicyType indicates the type of sampling policy.
@@ -49,6 +40,9 @@ const (
 	// BooleanAttribute sample traces having an attribute, of type bool, that matches
 	// the specified boolean value [true|false].
 	BooleanAttribute PolicyType = "boolean_attribute"
+	// OTTLCondition sample traces which match user provided OpenTelemetry Transformation Language
+	// conditions.
+	OTTLCondition PolicyType = "ottl_condition"
 )
 
 // sharedPolicyCfg holds the common configuration to all policies that are used in derivative policy configurations
@@ -76,6 +70,8 @@ type sharedPolicyCfg struct {
 	TraceStateCfg TraceStateCfg `mapstructure:"trace_state"`
 	// Configs for boolean attribute filter sampling policy evaluator.
 	BooleanAttributeCfg BooleanAttributeCfg `mapstructure:"boolean_attribute"`
+	// Configs for OTTL condition filter sampling policy evaluator
+	OTTLConditionCfg OTTLConditionCfg `mapstructure:"ottl_condition"`
 }
 
 // CompositeSubPolicyCfg holds the common configuration to all policies under composite policy.
@@ -91,6 +87,7 @@ type AndSubPolicyCfg struct {
 	sharedPolicyCfg `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct
 }
 
+// TraceStateCfg holds the common configuration for trace states.
 type TraceStateCfg struct {
 	// Tag that the filter is going to be matching against.
 	Key string `mapstructure:"key"`
@@ -98,6 +95,7 @@ type TraceStateCfg struct {
 	Values []string `mapstructure:"values"`
 }
 
+// AndCfg holds the common configuration to all and policies.
 type AndCfg struct {
 	SubPolicyCfg []AndSubPolicyCfg `mapstructure:"and_sub_policy"`
 }
@@ -111,7 +109,7 @@ type CompositeCfg struct {
 	RateAllocation         []RateAllocationCfg     `mapstructure:"rate_allocation"`
 }
 
-// RateAllocationCfg  used within composite policy
+// RateAllocationCfg used within composite policy
 type RateAllocationCfg struct {
 	Policy  string `mapstructure:"policy"`
 	Percent int64  `mapstructure:"percent"`
@@ -130,8 +128,10 @@ type PolicyCfg struct {
 // LatencyCfg holds the configurable settings to create a latency filter sampling policy
 // evaluator
 type LatencyCfg struct {
-	// ThresholdMs in milliseconds.
+	// Lower bound in milliseconds. Retaining original name for compatibility
 	ThresholdMs int64 `mapstructure:"threshold_ms"`
+	// Upper bound in milliseconds.
+	UpperThresholdmsMs int64 `mapstructure:"upper_threshold_ms"`
 }
 
 // NumericAttributeCfg holds the configurable settings to create a numeric attribute filter
@@ -143,6 +143,10 @@ type NumericAttributeCfg struct {
 	MinValue int64 `mapstructure:"min_value"`
 	// MaxValue is the maximum value of the attribute to be considered a match.
 	MaxValue int64 `mapstructure:"max_value"`
+	// InvertMatch indicates that values must not match against attribute values.
+	// If InvertMatch is true and Values is equal to '123', all other values will be sampled except '123'.
+	// Also, if the specified Key does not match any resource or span attributes, data will be sampled.
+	InvertMatch bool `mapstructure:"invert_match"`
 }
 
 // ProbabilisticCfg holds the configurable settings to create a probabilistic
@@ -186,12 +190,12 @@ type StringAttributeCfg struct {
 // RateLimitingCfg holds the configurable settings to create a rate limiting
 // sampling policy evaluator.
 type RateLimitingCfg struct {
-	// SpansPerSecond sets the limit on the maximum nuber of spans that can be processed each second.
+	// SpansPerSecond sets the limit on the maximum number of spans that can be processed each second.
 	SpansPerSecond int64 `mapstructure:"spans_per_second"`
 }
 
-// SpanCountCfg holds the configurable settings to create a Span Count filter sampling policy
-// sampling policy evaluator
+// SpanCountCfg holds the configurable settings to create a Span Count filter sampling
+// policy evaluator
 type SpanCountCfg struct {
 	// Minimum number of spans in a Trace
 	MinSpans int32 `mapstructure:"min_spans"`
@@ -206,6 +210,31 @@ type BooleanAttributeCfg struct {
 	// Value indicate the bool value, either true or false to use when matching against attribute values.
 	// BooleanAttribute Policy will apply exact value match on Value
 	Value bool `mapstructure:"value"`
+	// InvertMatch indicates that values must not match against attribute values.
+	// If InvertMatch is true and Values is equal to 'true', all other values will be sampled except 'true'.
+	// Also, if the specified Key does not match any resource or span attributes, data will be sampled.
+	InvertMatch bool `mapstructure:"invert_match"`
+}
+
+// OTTLConditionCfg holds the configurable setting to create a OTTL condition filter
+// sampling policy evaluator.
+type OTTLConditionCfg struct {
+	ErrorMode           ottl.ErrorMode `mapstructure:"error_mode"`
+	SpanConditions      []string       `mapstructure:"span"`
+	SpanEventConditions []string       `mapstructure:"spanevent"`
+}
+
+type DecisionCacheConfig struct {
+	// SampledCacheSize specifies the size of the cache that holds the sampled trace IDs.
+	// This value will be the maximum amount of trace IDs that the cache can hold before overwriting previous IDs.
+	// For effective use, this value should be at least an order of magnitude greater than Config.NumTraces.
+	// If left as default 0, a no-op DecisionCache will be used.
+	SampledCacheSize int `mapstructure:"sampled_cache_size"`
+	// NonSampledCacheSize specifies the size of the cache that holds the non-sampled trace IDs.
+	// This value will be the maximum amount of trace IDs that the cache can hold before overwriting previous IDs.
+	// For effective use, this value should be at least an order of magnitude greater than Config.NumTraces.
+	// If left as default 0, a no-op DecisionCache will be used.
+	NonSampledCacheSize int `mapstructure:"non_sampled_cache_size"`
 }
 
 // Config holds the configuration for tail-based sampling.
@@ -222,4 +251,8 @@ type Config struct {
 	// PolicyCfgs sets the tail-based sampling policy which makes a sampling decision
 	// for a given trace when requested.
 	PolicyCfgs []PolicyCfg `mapstructure:"policies"`
+	// DecisionCache holds configuration for the decision cache(s)
+	DecisionCache DecisionCacheConfig `mapstructure:"decision_cache"`
+	// Options allows for additional configuration of the tail-based sampling processor in code.
+	Options []Option `mapstructure:"-"`
 }

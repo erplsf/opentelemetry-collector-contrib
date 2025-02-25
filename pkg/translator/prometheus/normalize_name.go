@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package prometheus // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 
@@ -24,11 +13,10 @@ import (
 
 // The map to translate OTLP units to Prometheus units
 // OTLP metrics use the c/s notation as specified at https://ucum.org/ucum.html
-// (See also https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/README.md#instrument-units)
+// (See also https://github.com/open-telemetry/semantic-conventions/blob/main/docs/general/metrics.md#instrument-units)
 // Prometheus best practices for units: https://prometheus.io/docs/practices/naming/#base-units
-// OpenMetrics specification for units: https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#units-and-base-units
+// OpenMetrics specification for units: https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#units-and-base-units
 var unitMap = map[string]string{
-
 	// Time
 	"d":   "days",
 	"h":   "hours",
@@ -48,11 +36,6 @@ var unitMap = map[string]string{
 	"MBy":  "megabytes",
 	"GBy":  "gigabytes",
 	"TBy":  "terabytes",
-	"B":    "bytes",
-	"KB":   "kilobytes",
-	"MB":   "megabytes",
-	"GB":   "gigabytes",
-	"TB":   "terabytes",
 
 	// SI
 	"m": "meters",
@@ -67,7 +50,6 @@ var unitMap = map[string]string{
 	"Hz":  "hertz",
 	"1":   "",
 	"%":   "percent",
-	"$":   "dollars",
 }
 
 // The map that translates the "per" unit
@@ -89,7 +71,7 @@ var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
 	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8950"),
 )
 
-// Build a Prometheus-compliant metric name for the specified metric
+// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
@@ -97,11 +79,11 @@ var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
 //
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
 // and https://prometheus.io/docs/practices/naming/#metric-and-label-naming
-func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
+func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
-	if normalizeNameGate.IsEnabled() {
+	if addMetricSuffixes && normalizeNameGate.IsEnabled() {
 		return normalizeName(metric, namespace)
 	}
 
@@ -123,7 +105,6 @@ func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
 
 // Build a normalized name for the specified metric
 func normalizeName(metric pmetric.Metric, namespace string) string {
-
 	// Split metric name in "tokens" (remove all non-alphanumeric)
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),
@@ -155,7 +136,6 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 				}
 			}
 		}
-
 	}
 
 	// Append _total for Counters
@@ -188,36 +168,11 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	return normalizedName
 }
 
-type Normalizer struct {
-	gate *featuregate.Gate
-}
-
-func NewNormalizer(registry *featuregate.Registry) *Normalizer {
-	var normalizeGate *featuregate.Gate
-	registry.VisitAll(func(gate *featuregate.Gate) {
-		if gate.ID() == normalizeNameGate.ID() {
-			normalizeGate = gate
-		}
-	})
-	// the registry didn't contain the flag, fallback to the global
-	// flag. Overriding the registry is really only done in tests
-	if normalizeGate == nil {
-		normalizeGate = normalizeNameGate
-	}
-	return &Normalizer{
-		gate: normalizeGate,
-	}
-}
-
 // TrimPromSuffixes trims type and unit prometheus suffixes from a metric name.
 // Following the [OpenTelemetry specs] for converting Prometheus Metric points to OTLP.
 //
 // [OpenTelemetry specs]: https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/data-model.md#metric-metadata
-func (n *Normalizer) TrimPromSuffixes(promName string, metricType pmetric.MetricType, unit string) string {
-	if !n.gate.IsEnabled() {
-		return promName
-	}
-
+func TrimPromSuffixes(promName string, metricType pmetric.MetricType, unit string) string {
 	nameTokens := strings.Split(promName, "_")
 	if len(nameTokens) == 1 {
 		return promName

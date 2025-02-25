@@ -1,22 +1,10 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package receivercreator
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -32,11 +20,11 @@ import (
 	"go.opentelemetry.io/collector/otelcol/otelcoltest"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver/receivertest"
-	semconv "go.opentelemetry.io/collector/semconv/v1.18.0"
-	"go.uber.org/zap"
-	zapObserver "go.uber.org/zap/zaptest/observer"
+	semconv "go.opentelemetry.io/collector/semconv/v1.27.0"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/sharedcomponent"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/receivercreator/internal/metadata"
 )
 
 func TestCreateDefaultConfig(t *testing.T) {
@@ -46,14 +34,13 @@ func TestCreateDefaultConfig(t *testing.T) {
 	assert.NoError(t, componenttest.CheckConfigStruct(cfg))
 }
 
-type mockObserver struct {
-}
+type mockObserver struct{}
 
-func (m *mockObserver) Start(ctx context.Context, host component.Host) error {
+func (m *mockObserver) Start(_ context.Context, _ component.Host) error {
 	return nil
 }
 
-func (m *mockObserver) Shutdown(ctx context.Context) error {
+func (m *mockObserver) Shutdown(_ context.Context) error {
 	return nil
 }
 
@@ -72,27 +59,28 @@ func TestMockedEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	factories, _ := otelcoltest.NopFactories()
-	factories.Receivers[("nop")] = &nopWithEndpointFactory{Factory: receivertest.NewNopFactory()}
+	factories.Receivers[component.MustNewType("nop")] = &nopWithEndpointFactory{Factory: receivertest.NewNopFactory()}
 	factory := NewFactory()
-	factories.Receivers[typeStr] = factory
+	factories.Receivers[metadata.Type] = factory
 
 	host := &mockHostFactories{Host: componenttest.NewNopHost(), factories: factories}
 	host.extensions = map[component.ID]component.Component{
-		component.NewID("mock_observer"):                      &mockObserver{},
-		component.NewIDWithName("mock_observer", "with_name"): &mockObserver{},
+		component.MustNewID("mock_observer"):                      &mockObserver{},
+		component.MustNewIDWithName("mock_observer", "with_name"): &mockObserver{},
 	}
 
 	cfg := factory.CreateDefaultConfig()
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "1").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "1").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := receivertest.NewNopCreateSettings()
+	params := receivertest.NewNopSettings(metadata.Type)
 	mockConsumer := new(consumertest.MetricsSink)
 
-	rcvr, err := factory.CreateMetricsReceiver(context.Background(), params, cfg, mockConsumer)
+	rcvr, err := factory.CreateMetrics(context.Background(), params, cfg, mockConsumer)
 	require.NoError(t, err)
-	dyn := rcvr.(*receiverCreator)
+	sc := rcvr.(*sharedcomponent.SharedComponent)
+	dyn := sc.Component.(*receiverCreator)
 	require.NoError(t, rcvr.Start(context.Background(), host))
 
 	var shutdownOnce sync.Once
@@ -110,7 +98,8 @@ func TestMockedEndToEnd(t *testing.T) {
 
 	// Test that we can send metrics.
 	for _, receiver := range dyn.observerHandler.receiversByEndpointID.Values() {
-		example := receiver.(*nopWithEndpointReceiver)
+		wr := receiver.(*wrappedReceiver)
+		example := wr.metrics.(*nopWithEndpointReceiver)
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
 		rm.Resource().Attributes().PutStr("attr", "1")
@@ -124,17 +113,4 @@ func TestMockedEndToEnd(t *testing.T) {
 
 	// TODO: Will have to rework once receivers are started asynchronously to Start().
 	assert.Len(t, mockConsumer.AllMetrics(), 2)
-}
-
-func TestLoggingHost(t *testing.T) {
-	core, obs := zapObserver.New(zap.ErrorLevel)
-	host := &loggingHost{
-		Host:   componenttest.NewNopHost(),
-		logger: zap.New(core),
-	}
-	host.ReportFatalError(errors.New("runtime error"))
-	require.Equal(t, 1, obs.Len())
-	log := obs.All()[0]
-	assert.Equal(t, "receiver reported a fatal error", log.Message)
-	assert.Equal(t, "runtime error", log.ContextMap()["error"])
 }

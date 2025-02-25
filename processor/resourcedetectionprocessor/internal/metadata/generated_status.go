@@ -6,7 +6,14 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("resourcedetection")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourcedetectionprocessor"
+)
+
 const (
-	Type      = "resourcedetectionprocessor"
-	Stability = component.StabilityLevelBeta
+	ProfilesStability = component.StabilityLevelDevelopment
+	TracesStability   = component.StabilityLevelBeta
+	MetricsStability  = component.StabilityLevelBeta
+	LogsStability     = component.StabilityLevelBeta
 )

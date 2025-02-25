@@ -20,29 +20,6 @@ signalfx/allsettings:
     added-entry: "added value"
     dot.test: test
   access_token_passthrough: false
-  translation_rules:
-  - action: rename_dimension_keys
-    mapping:
-      k8s.cluster.name: kubernetes_cluster
-  - action: drop_dimensions
-    dimension_pairs:
-      foo:
-      foo1:
-        bar: true
-  - action: drop_dimensions
-    metric_name: metric
-    dimension_pairs:
-      foo:
-      foo1:
-        bar: true
-  - action: drop_dimensions
-    metric_names:
-      metric1: true
-      metric2: true
-    dimension_pairs:
-      foo:
-      foo1:
-        bar: true
   exclude_metrics:
     - metric_name: metric1
     - metric_names: [metric2, metric3]
@@ -61,6 +38,15 @@ signalfx/allsettings:
   include_metrics:
     - metric_name: metric1
     - metric_names: [metric2, metric3]
+  log_dimension_updates: true
+  dimension_client:
+    max_buffered: 1
+    send_delay: 1h
+    max_idle_conns: 100
+    max_idle_conns_per_host: 10
+    max_conns_per_host: 10000
+    idle_conn_timeout: 2h
+    timeout: 20s
   exclude_properties:
     - property_name: globbed*
     - property_value: '!globbed*value'
@@ -70,3 +56,4 @@ signalfx/allsettings:
       property_value: '!globbed*value'
       dimension_name: globbed*
       dimension_value: '!globbed*value'
+  send_otlp_histograms: true

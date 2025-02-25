@@ -1,16 +1,5 @@
-// Copyright  The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package logicmonitorexporter
 
@@ -21,8 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/confighttp"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	"go.opentelemetry.io/collector/exporter/exportertest"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter/internal/metadata"
 )
 
 // Test that the factory creates the default configuration
@@ -31,14 +23,14 @@ func TestCreateDefaultConfig(t *testing.T) {
 	cfg := factory.CreateDefaultConfig()
 
 	assert.Equal(t, &Config{
-		RetrySettings: exporterhelper.NewDefaultRetrySettings(),
-		QueueSettings: exporterhelper.NewDefaultQueueSettings(),
+		BackOffConfig: configretry.NewDefaultBackOffConfig(),
+		QueueSettings: exporterhelper.NewDefaultQueueConfig(),
 	}, cfg, "failed to create default config")
 
 	assert.NoError(t, componenttest.CheckConfigStruct(cfg))
 }
 
-func TestCreateLogsExporter(t *testing.T) {
+func TestCreateLogs(t *testing.T) {
 	tests := []struct {
 		name         string
 		config       Config
@@ -48,7 +40,7 @@ func TestCreateLogsExporter(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
+				ClientConfig: confighttp.ClientConfig{
 					Endpoint: "http://example.logicmonitor.com/rest",
 				},
 			},
@@ -59,10 +51,10 @@ func TestCreateLogsExporter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			factory := NewFactory()
 			cfg := factory.CreateDefaultConfig().(*Config)
-			set := exportertest.NewNopCreateSettings()
-			oexp, err := factory.CreateLogsExporter(context.Background(), set, cfg)
+			set := exportertest.NewNopSettings(metadata.Type)
+			oexp, err := factory.CreateLogs(context.Background(), set, cfg)
 			if (err != nil) != tt.shouldError {
-				t.Errorf("CreateLogsExporter() error = %v, shouldError %v", err, tt.shouldError)
+				t.Errorf("CreateLogs() error = %v, shouldError %v", err, tt.shouldError)
 				return
 			}
 			if tt.shouldError {
@@ -78,7 +70,7 @@ func TestCreateLogsExporter(t *testing.T) {
 	}
 }
 
-func TestCreateTracesExporter(t *testing.T) {
+func TestCreateTraces(t *testing.T) {
 	tests := []struct {
 		name         string
 		config       Config
@@ -88,7 +80,7 @@ func TestCreateTracesExporter(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
+				ClientConfig: confighttp.ClientConfig{
 					Endpoint: "http://example.logicmonitor.com/rest",
 				},
 			},
@@ -99,10 +91,10 @@ func TestCreateTracesExporter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			factory := NewFactory()
 			cfg := factory.CreateDefaultConfig().(*Config)
-			set := exportertest.NewNopCreateSettings()
-			oexp, err := factory.CreateTracesExporter(context.Background(), set, cfg)
+			set := exportertest.NewNopSettings(metadata.Type)
+			oexp, err := factory.CreateTraces(context.Background(), set, cfg)
 			if (err != nil) != tt.shouldError {
-				t.Errorf("CreateTracesExporter() error = %v, shouldError %v", err, tt.shouldError)
+				t.Errorf("CreateTraces() error = %v, shouldError %v", err, tt.shouldError)
 				return
 			}
 			if tt.shouldError {

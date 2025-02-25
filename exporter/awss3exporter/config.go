@@ -1,42 +1,98 @@
-// Copyright 2022 OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package awss3exporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awss3exporter"
 
 import (
-	"go.uber.org/zap"
+	"errors"
+
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configcompression"
+	"go.opentelemetry.io/collector/exporter/exporterhelper"
+	"go.uber.org/multierr"
 )
 
 // S3UploaderConfig contains aws s3 uploader related config to controls things
 // like bucket, prefix, batching, connections, retries, etc.
 type S3UploaderConfig struct {
-	Region      string `mapstructure:"region"`
-	S3Bucket    string `mapstructure:"s3_bucket"`
-	S3Prefix    string `mapstructure:"s3_prefix"`
+	Region string `mapstructure:"region"`
+	// S3Bucket is the bucket name to be uploaded to.
+	S3Bucket string `mapstructure:"s3_bucket"`
+	// S3Prefix is the key (directory) prefix to written to inside the bucket
+	S3Prefix string `mapstructure:"s3_prefix"`
+	// S3Partition is used to provide the rollup on how data is written.
+	// Valid values are: [hour,minute]
 	S3Partition string `mapstructure:"s3_partition"`
-	FilePrefix  string `mapstructure:"file_prefix"`
+	// FilePrefix is the filename prefix used for the file to avoid any potential collisions.
+	FilePrefix string `mapstructure:"file_prefix"`
+	// Endpoint is the URL used for communicated with S3.
+	Endpoint string `mapstructure:"endpoint"`
+	// RoleArn is the role policy to use when interacting with S3
+	RoleArn string `mapstructure:"role_arn"`
+	// S3ForcePathStyle sets the value for force path style.
+	S3ForcePathStyle bool `mapstructure:"s3_force_path_style"`
+	// DisableSLL forces communication to happen via HTTP instead of HTTPS.
+	DisableSSL bool `mapstructure:"disable_ssl"`
+
+	StorageClass string `mapstructure:"storage_class"`
+	// Compression sets the algorithm used to process the payload
+	// before uploading to S3.
+	// Valid values are: `gzip` or no value set.
+	Compression configcompression.Type `mapstructure:"compression"`
 }
 
-// Config contains the main configuration options for the awskinesis exporter
+type MarshalerType string
+
+const (
+	OtlpProtobuf MarshalerType = "otlp_proto"
+	OtlpJSON     MarshalerType = "otlp_json"
+	SumoIC       MarshalerType = "sumo_ic"
+	Body         MarshalerType = "body"
+)
+
+// Config contains the main configuration options for the s3 exporter
 type Config struct {
+	QueueSettings exporterhelper.QueueConfig `mapstructure:"sending_queue"`
+
 	S3Uploader    S3UploaderConfig `mapstructure:"s3uploader"`
-	MarshalerName string           `mapstructure:"marshaler_name"`
+	MarshalerName MarshalerType    `mapstructure:"marshaler"`
 
-	// ResourceToTelemetrySettings is the option for converting resource attrihutes to telemetry attributes.
-	// "Enabled" - A boolean field to enable/disable this option. Default is `false`.
-	// If enabled, all the resource attributes will be converted to metric labels by default.
-	// exporterhelper.ResourceToTelemetrySettings `mapstructure:"resource_to_telemetry_conversion"`
+	// Encoding to apply. If present, overrides the marshaler configuration option.
+	Encoding              *component.ID `mapstructure:"encoding"`
+	EncodingFileExtension string        `mapstructure:"encoding_file_extension"`
+}
 
-	logger *zap.Logger
+func (c *Config) Validate() error {
+	var errs error
+	validStorageClasses := map[string]bool{
+		"STANDARD":            true,
+		"STANDARD_IA":         true,
+		"ONEZONE_IA":          true,
+		"INTELLIGENT_TIERING": true,
+		"GLACIER":             true,
+		"DEEP_ARCHIVE":        true,
+	}
+
+	if c.S3Uploader.Region == "" {
+		errs = multierr.Append(errs, errors.New("region is required"))
+	}
+	if c.S3Uploader.S3Bucket == "" && c.S3Uploader.Endpoint == "" {
+		errs = multierr.Append(errs, errors.New("bucket or endpoint is required"))
+	}
+
+	if !validStorageClasses[c.S3Uploader.StorageClass] {
+		errs = multierr.Append(errs, errors.New("invalid StorageClass"))
+	}
+
+	compression := c.S3Uploader.Compression
+	if compression.IsCompressed() {
+		if compression != configcompression.TypeGzip {
+			errs = multierr.Append(errs, errors.New("unknown compression type"))
+		}
+
+		if c.MarshalerName == SumoIC {
+			errs = multierr.Append(errs, errors.New("marshaler does not support compression"))
+		}
+	}
+	return errs
 }

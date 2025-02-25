@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package lokireceiver
 
@@ -25,6 +14,9 @@ import (
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/lokireceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -38,32 +30,32 @@ func TestLoadConfig(t *testing.T) {
 		expected component.Config
 	}{
 		{
-			id: component.NewIDWithName(typeStr, "defaults"),
+			id: component.NewIDWithName(metadata.Type, "defaults"),
 			expected: &Config{
 				Protocols: Protocols{
-					GRPC: &configgrpc.GRPCServerSettings{
-						NetAddr: confignet.NetAddr{
-							Endpoint:  "0.0.0.0:3600",
-							Transport: "tcp",
+					GRPC: &configgrpc.ServerConfig{
+						NetAddr: confignet.AddrConfig{
+							Endpoint:  "localhost:3600",
+							Transport: confignet.TransportTypeTCP,
 						},
 					},
-					HTTP: &confighttp.HTTPServerSettings{
-						Endpoint: "0.0.0.0:3500",
+					HTTP: &confighttp.ServerConfig{
+						Endpoint: "localhost:3500",
 					},
 				},
 			},
 		},
 		{
-			id: component.NewIDWithName(typeStr, "mixed"),
+			id: component.NewIDWithName(metadata.Type, "mixed"),
 			expected: &Config{
 				Protocols: Protocols{
-					GRPC: &configgrpc.GRPCServerSettings{
-						NetAddr: confignet.NetAddr{
+					GRPC: &configgrpc.ServerConfig{
+						NetAddr: confignet.AddrConfig{
 							Endpoint:  "localhost:4600",
-							Transport: "tcp",
+							Transport: confignet.TransportTypeTCP,
 						},
 					},
-					HTTP: &confighttp.HTTPServerSettings{
+					HTTP: &confighttp.ServerConfig{
 						Endpoint: "localhost:4500",
 					},
 				},
@@ -79,9 +71,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
@@ -96,7 +88,7 @@ func TestInvalidConfig(t *testing.T) {
 		err string
 	}{
 		{
-			id:  component.NewIDWithName(typeStr, "empty"),
+			id:  component.NewIDWithName(metadata.Type, "empty"),
 			err: "must specify at least one protocol when using the Loki receiver",
 		},
 	}
@@ -108,9 +100,9 @@ func TestInvalidConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			err = component.ValidateConfig(cfg)
+			err = xconfmap.Validate(cfg)
 			assert.Error(t, err, tt.err)
 		})
 	}
@@ -125,7 +117,7 @@ func TestConfigWithUnknownKeysConfig(t *testing.T) {
 		err string
 	}{
 		{
-			id:  component.NewIDWithName(typeStr, "extra_keys"),
+			id:  component.NewIDWithName(metadata.Type, "extra_keys"),
 			err: "'' has invalid keys: foo",
 		},
 	}
@@ -137,7 +129,7 @@ func TestConfigWithUnknownKeysConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			assert.Contains(t, component.UnmarshalConfig(sub, cfg).Error(), tt.err)
+			assert.Contains(t, sub.Unmarshal(cfg).Error(), tt.err)
 		})
 	}
 }

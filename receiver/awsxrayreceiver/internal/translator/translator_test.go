@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package translator
 
@@ -27,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	conventions "go.opentelemetry.io/collector/semconv/v1.18.0"
 
 	awsxray "github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/xray"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/xray/telemetry"
@@ -58,9 +47,9 @@ type eventProps struct {
 }
 
 func TestTranslation(t *testing.T) {
-	var defaultServerSpanAttrs = func(seg *awsxray.Segment) pcommon.Map {
+	defaultServerSpanAttrs := func(seg *awsxray.Segment) pcommon.Map {
 		m := pcommon.NewMap()
-		assert.NoError(t, m.FromRaw(map[string]interface{}{
+		assert.NoError(t, m.FromRaw(map[string]any{
 			conventions.AttributeHTTPMethod:       *seg.HTTP.Request.Method,
 			conventions.AttributeHTTPClientIP:     *seg.HTTP.Request.ClientIP,
 			conventions.AttributeHTTPUserAgent:    *seg.HTTP.Request.UserAgent,
@@ -75,9 +64,9 @@ func TestTranslation(t *testing.T) {
 		testCase                  string
 		expectedUnmarshallFailure bool
 		samplePath                string
-		expectedResourceAttrs     func(seg *awsxray.Segment) map[string]interface{}
+		expectedResourceAttrs     func(seg *awsxray.Segment) map[string]any
 		expectedRecord            xray.TelemetryRecord
-		propsPerSpan              func(testCase string, t *testing.T, seg *awsxray.Segment) []perSpanProperties
+		propsPerSpan              func(t *testing.T, testCase string, seg *awsxray.Segment) []perSpanProperties
 		verification              func(testCase string,
 			actualSeg *awsxray.Segment,
 			expectedRs ptrace.ResourceSpans,
@@ -87,8 +76,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateInstrumentedServerSegment",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "serverSample.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:          *seg.Name,
 					conventions.AttributeCloudProvider:        conventions.AttributeCloudProviderAWS,
 					conventions.AttributeTelemetrySDKVersion:  *seg.AWS.XRay.SDKVersion,
@@ -103,7 +92,7 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				attrs := defaultServerSpanAttrs(seg)
 				res := perSpanProperties{
 					traceID:      *seg.TraceID,
@@ -121,7 +110,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -133,8 +123,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateInstrumentedClientSegment",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "ddbSample.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:          *seg.Name,
 					conventions.AttributeCloudProvider:        conventions.AttributeCloudProviderAWS,
 					conventions.AttributeTelemetrySDKVersion:  *seg.AWS.XRay.SDKVersion,
@@ -146,7 +136,7 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(18),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(testCase string, t *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(t *testing.T, testCase string, seg *awsxray.Segment) []perSpanProperties {
 				rootSpanAttrs := pcommon.NewMap()
 				rootSpanAttrs.PutStr(conventions.AttributeEnduserID, *seg.User)
 				rootSpanEvts := initExceptionEvents(seg)
@@ -198,7 +188,7 @@ func TestTranslation(t *testing.T) {
 
 				subseg7318 := seg.Subsegments[0].Subsegments[0]
 				childSpan7318Attrs := pcommon.NewMap()
-				assert.NoError(t, childSpan7318Attrs.FromRaw(map[string]interface{}{
+				assert.NoError(t, childSpan7318Attrs.FromRaw(map[string]any{
 					awsxray.AWSServiceAttribute:                    *subseg7318.Name,
 					conventions.AttributeHTTPResponseContentLength: int64(subseg7318.HTTP.Response.ContentLength.(float64)),
 					conventions.AttributeHTTPStatusCode:            *subseg7318.HTTP.Response.Status,
@@ -394,7 +384,7 @@ func TestTranslation(t *testing.T) {
 
 				subseg7163 := seg.Subsegments[0].Subsegments[1]
 				childSpan7163Attrs := pcommon.NewMap()
-				assert.NoError(t, childSpan7163Attrs.FromRaw(map[string]interface{}{
+				assert.NoError(t, childSpan7163Attrs.FromRaw(map[string]any{
 					awsxray.AWSServiceAttribute:                    *subseg7163.Name,
 					conventions.AttributeHTTPStatusCode:            *subseg7163.HTTP.Response.Status,
 					conventions.AttributeHTTPResponseContentLength: int64(subseg7163.HTTP.Response.ContentLength.(float64)),
@@ -506,7 +496,8 @@ func TestTranslation(t *testing.T) {
 					attrs:       pcommon.NewMap(),
 				}
 
-				return []perSpanProperties{rootSpan,
+				return []perSpanProperties{
+					rootSpan,
 					childSpan7df6,
 					childSpan7318,
 					childSpan0239,
@@ -528,7 +519,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					"one segment should translate to 1 ResourceSpans")
@@ -540,8 +532,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "[aws] TranslateMissingAWSFieldSegment",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "awsMissingAwsField.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:   *seg.Name,
 					conventions.AttributeCloudProvider: "unknown",
 				}
@@ -550,7 +542,7 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				attrs := defaultServerSpanAttrs(seg)
 				res := perSpanProperties{
 					traceID:      *seg.TraceID,
@@ -568,7 +560,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -580,8 +573,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "[aws] TranslateEC2AWSFieldsSegment",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "awsValidAwsFields.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:           *seg.Name,
 					conventions.AttributeCloudProvider:         conventions.AttributeCloudProviderAWS,
 					conventions.AttributeCloudAccountID:        *seg.AWS.AccountID,
@@ -603,7 +596,7 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				attrs := defaultServerSpanAttrs(seg)
 				attrs.PutStr(awsxray.AWSAccountAttribute, *seg.AWS.AccountID)
 				res := perSpanProperties{
@@ -622,7 +615,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -634,8 +628,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateCauseIsExceptionId",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "minCauseIsExceptionId.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:   *seg.Name,
 					conventions.AttributeCloudProvider: "unknown",
 				}
@@ -644,7 +638,7 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				res := perSpanProperties{
 					traceID:      *seg.TraceID,
 					spanID:       *seg.ID,
@@ -662,7 +656,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -674,30 +669,30 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateInvalidNamespace",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "invalidNamespace.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
+			expectedResourceAttrs: func(*awsxray.Segment) map[string]any {
 				return nil
 			},
 			expectedRecord: xray.TelemetryRecord{
 				SegmentsReceivedCount: aws.Int64(18),
 				SegmentsRejectedCount: aws.Int64(18),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(*testing.T, string, *awsxray.Segment) []perSpanProperties {
 				return nil
 			},
 			verification: func(testCase string,
 				actualSeg *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				_ ptrace.ResourceSpans, _ ptrace.Traces, err error,
+			) {
 				assert.EqualError(t, err,
-					fmt.Sprintf("unexpected namespace: %s",
-						*actualSeg.Subsegments[0].Subsegments[0].Namespace),
+					"unexpected namespace: "+*actualSeg.Subsegments[0].Subsegments[0].Namespace,
 					testCase+": translation should've failed")
 			},
 		},
 		{
 			testCase:   "TranslateIndepSubsegment",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "indepSubsegment.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:   *seg.Name,
 					conventions.AttributeCloudProvider: "unknown",
 				}
@@ -706,9 +701,9 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				attrs := pcommon.NewMap()
-				assert.NoError(t, attrs.FromRaw(map[string]interface{}{
+				assert.NoError(t, attrs.FromRaw(map[string]any{
 					conventions.AttributeHTTPMethod:                *seg.HTTP.Request.Method,
 					conventions.AttributeHTTPStatusCode:            *seg.HTTP.Response.Status,
 					conventions.AttributeHTTPURL:                   *seg.HTTP.Request.URL,
@@ -732,7 +727,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -744,8 +740,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateIndepSubsegmentForContentLengthString",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "indepSubsegmentWithContentLengthString.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:   *seg.Name,
 					conventions.AttributeCloudProvider: "unknown",
 				}
@@ -754,9 +750,9 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				attrs := pcommon.NewMap()
-				assert.NoError(t, attrs.FromRaw(map[string]interface{}{
+				assert.NoError(t, attrs.FromRaw(map[string]any{
 					conventions.AttributeHTTPMethod:                *seg.HTTP.Request.Method,
 					conventions.AttributeHTTPStatusCode:            *seg.HTTP.Response.Status,
 					conventions.AttributeHTTPURL:                   *seg.HTTP.Request.URL,
@@ -781,7 +777,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -793,8 +790,8 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateSql",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "indepSubsegmentWithSql.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
-				return map[string]interface{}{
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
 					conventions.AttributeServiceName:   *seg.Name,
 					conventions.AttributeCloudProvider: "unknown",
 				}
@@ -803,9 +800,9 @@ func TestTranslation(t *testing.T) {
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
 				attrs := pcommon.NewMap()
-				assert.NoError(t, attrs.FromRaw(map[string]interface{}{
+				assert.NoError(t, attrs.FromRaw(map[string]any{
 					conventions.AttributeDBConnectionString: "jdbc:postgresql://aawijb5u25wdoy.cpamxznpdoq8.us-west-2." +
 						"rds.amazonaws.com:5432",
 					conventions.AttributeDBName:      "ebdb",
@@ -830,7 +827,8 @@ func TestTranslation(t *testing.T) {
 			},
 			verification: func(testCase string,
 				_ *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
 				assert.NoError(t, err, testCase+": translation should've succeeded")
 				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
 					testCase+": one segment should translate to 1 ResourceSpans")
@@ -842,44 +840,89 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateInvalidSqlUrl",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "indepSubsegmentWithInvalidSqlUrl.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
+			expectedResourceAttrs: func(*awsxray.Segment) map[string]any {
 				return nil
 			},
 			expectedRecord: xray.TelemetryRecord{
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(1),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(*testing.T, string, *awsxray.Segment) []perSpanProperties {
 				return nil
 			},
 			verification: func(testCase string,
 				actualSeg *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				_ ptrace.ResourceSpans, _ ptrace.Traces, err error,
+			) {
 				assert.EqualError(t, err,
-					fmt.Sprintf(
-						"failed to parse out the database name in the \"sql.url\" field, rawUrl: %s",
-						*actualSeg.SQL.URL,
-					),
+					"failed to parse out the database name in the \"sql.url\" field, rawUrl: "+*actualSeg.SQL.URL,
 					testCase+": translation should've failed")
+			},
+		},
+		{
+			testCase:   "TranslateLocalNamespace",
+			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "indepSubsegmentWithLocalNamespace.txt"),
+			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]any {
+				return map[string]any{
+					conventions.AttributeServiceName:   *seg.Name,
+					conventions.AttributeCloudProvider: "unknown",
+				}
+			},
+			expectedRecord: xray.TelemetryRecord{
+				SegmentsReceivedCount: aws.Int64(1),
+				SegmentsRejectedCount: aws.Int64(0),
+			},
+			propsPerSpan: func(_ *testing.T, _ string, seg *awsxray.Segment) []perSpanProperties {
+				attrs := pcommon.NewMap()
+				assert.NoError(t, attrs.FromRaw(map[string]any{
+					awsxray.AWSXRayTracedAttribute: true,
+				}))
+				res := perSpanProperties{
+					traceID:      *seg.TraceID,
+					spanID:       *seg.ID,
+					parentSpanID: seg.ParentID,
+					name:         *seg.Name,
+					startTimeSec: *seg.StartTime,
+					endTimeSec:   seg.EndTime,
+					spanKind:     ptrace.SpanKindInternal,
+					spanStatus: spanSt{
+						code: ptrace.StatusCodeUnset,
+					},
+					attrs: attrs,
+				}
+				return []perSpanProperties{res}
+				// return nil
+			},
+			verification: func(testCase string,
+				_ *awsxray.Segment,
+				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error,
+			) {
+				assert.NoError(t, err, testCase+": translation should've succeeded")
+				assert.Equal(t, 1, actualTraces.ResourceSpans().Len(),
+					testCase+": one segment should translate to 1 ResourceSpans")
+
+				actualRs := actualTraces.ResourceSpans().At(0)
+				assert.NoError(t, ptracetest.CompareResourceSpans(expectedRs, actualRs))
 			},
 		},
 		{
 			testCase:                  "TranslateJsonUnmarshallFailed",
 			expectedUnmarshallFailure: true,
 			samplePath:                filepath.Join("../../../../internal/aws/xray", "testdata", "minCauseIsInvalid.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
+			expectedResourceAttrs: func(*awsxray.Segment) map[string]any {
 				return nil
 			},
 			expectedRecord: xray.TelemetryRecord{
 				SegmentsReceivedCount: aws.Int64(0),
 				SegmentsRejectedCount: aws.Int64(0),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(*testing.T, string, *awsxray.Segment) []perSpanProperties {
 				return nil
 			},
 			verification: func(testCase string,
-				actualSeg *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
+				_ *awsxray.Segment,
+				_ ptrace.ResourceSpans, _ ptrace.Traces, err error,
+			) {
 				assert.EqualError(t, err,
 					fmt.Sprintf(
 						"the value assigned to the `cause` field does not appear to be a string: %v",
@@ -891,20 +934,21 @@ func TestTranslation(t *testing.T) {
 		{
 			testCase:   "TranslateRootSegValidationFailed",
 			samplePath: filepath.Join("../../../../internal/aws/xray", "testdata", "segmentValidationFailed.txt"),
-			expectedResourceAttrs: func(seg *awsxray.Segment) map[string]interface{} {
+			expectedResourceAttrs: func(*awsxray.Segment) map[string]any {
 				return nil
 			},
 			expectedRecord: xray.TelemetryRecord{
 				SegmentsReceivedCount: aws.Int64(1),
 				SegmentsRejectedCount: aws.Int64(1),
 			},
-			propsPerSpan: func(_ string, _ *testing.T, seg *awsxray.Segment) []perSpanProperties {
+			propsPerSpan: func(*testing.T, string, *awsxray.Segment) []perSpanProperties {
 				return nil
 			},
 			verification: func(testCase string,
-				actualSeg *awsxray.Segment,
-				expectedRs ptrace.ResourceSpans, actualTraces ptrace.Traces, err error) {
-				assert.EqualError(t, err, `segment "start_time" can not be nil`,
+				_ *awsxray.Segment,
+				_ ptrace.ResourceSpans, _ ptrace.Traces, err error,
+			) {
+				assert.EqualError(t, err, `segment "start_time" cannot be nil`,
 					testCase+": translation should've failed")
 			},
 		},
@@ -913,8 +957,8 @@ func TestTranslation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.testCase, func(t *testing.T) {
 			content, err := os.ReadFile(tc.samplePath)
-			assert.NoError(t, err, "can not read raw segment")
-			assert.True(t, len(content) > 0, "content length is 0")
+			assert.NoError(t, err, "cannot read raw segment")
+			assert.NotEmpty(t, content, "content length is 0")
 
 			var (
 				actualSeg  awsxray.Segment
@@ -924,11 +968,11 @@ func TestTranslation(t *testing.T) {
 				err = json.Unmarshal(content, &actualSeg)
 				// the correctness of the actual segment
 				// has been verified in the tracesegment_test.go
-				assert.NoError(t, err, "failed to unmarhal raw segment")
+				assert.NoError(t, err, "failed to unmarshal raw segment")
 				expectedRs = initResourceSpans(t,
 					&actualSeg,
 					tc.expectedResourceAttrs(&actualSeg),
-					tc.propsPerSpan(tc.testCase, t, &actualSeg),
+					tc.propsPerSpan(t, tc.testCase, &actualSeg),
 				)
 			}
 
@@ -989,7 +1033,7 @@ func initExceptionEvents(expectedSeg *awsxray.Segment) []eventProps {
 }
 
 func initResourceSpans(t *testing.T, expectedSeg *awsxray.Segment,
-	resourceAttrs map[string]interface{},
+	resourceAttrs map[string]any,
 	propsPerSpan []perSpanProperties,
 ) ptrace.ResourceSpans {
 	if expectedSeg == nil {
@@ -1014,7 +1058,8 @@ func initResourceSpans(t *testing.T, expectedSeg *awsxray.Segment,
 
 	for _, props := range propsPerSpan {
 		sp := ls.Spans().AppendEmpty()
-		spanIDBytes, _ := decodeXRaySpanID(&props.spanID)
+		spanID := props.spanID
+		spanIDBytes, _ := decodeXRaySpanID(&spanID)
 		sp.SetSpanID(spanIDBytes)
 		if props.parentSpanID != nil {
 			parentIDBytes, _ := decodeXRaySpanID(props.parentSpanID)
@@ -1026,7 +1071,8 @@ func initResourceSpans(t *testing.T, expectedSeg *awsxray.Segment,
 			sp.SetEndTimestamp(pcommon.Timestamp(*props.endTimeSec * float64(time.Second)))
 		}
 		sp.SetKind(props.spanKind)
-		traceIDBytes, _ := decodeXRayTraceID(&props.traceID)
+		traceID := props.traceID
+		traceIDBytes, _ := decodeXRayTraceID(&traceID)
 		sp.SetTraceID(traceIDBytes)
 		sp.Status().SetMessage(props.spanStatus.message)
 		sp.Status().SetCode(props.spanStatus.code)
@@ -1056,7 +1102,7 @@ func TestDecodeXRayTraceID(t *testing.T) {
 	traceIDBytes, err := decodeXRayTraceID(&traceID)
 	expectedTraceIDBytes := [16]byte{0x5f, 0x84, 0xc7, 0xa1, 0xe7, 0xd1, 0x85, 0x2d, 0xb8, 0xc4, 0xfd, 0x35, 0xd8, 0x8b, 0xf4, 0x9a}
 	if assert.NoError(t, err) {
-		assert.Equal(t, traceIDBytes, expectedTraceIDBytes)
+		assert.Equal(t, expectedTraceIDBytes, traceIDBytes)
 	}
 
 	// invalid format
@@ -1075,7 +1121,7 @@ func TestDecodeXRaySpanID(t *testing.T) {
 	spanIDBytes, err := decodeXRaySpanID(&spanID)
 	expectedSpanIDBytes := [8]byte{0xde, 0xfd, 0xfd, 0x99, 0x12, 0xdc, 0x5a, 0x56}
 	if assert.NoError(t, err) {
-		assert.Equal(t, spanIDBytes, expectedSpanIDBytes)
+		assert.Equal(t, expectedSpanIDBytes, spanIDBytes)
 	}
 
 	// invalid format
@@ -1086,5 +1132,4 @@ func TestDecodeXRaySpanID(t *testing.T) {
 	// null point
 	_, err = decodeXRaySpanID(nil)
 	assert.Error(t, err)
-
 }

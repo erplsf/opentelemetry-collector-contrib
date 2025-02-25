@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package solacereceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/solacereceiver"
 
@@ -48,7 +37,7 @@ func newAMQPMessagingServiceFactory(cfg *Config, logger *zap.Logger) (messagingS
 
 	// Use the default load config for TLS. Note that in the case where "insecure" is true and no
 	// ca file is provided, tlsConfig will be nil representing a plaintext connection.
-	loadedTLSConfig, err := cfg.TLS.LoadTLSConfig()
+	loadedTLSConfig, err := cfg.TLS.LoadTLSConfig(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +69,10 @@ func newAMQPMessagingServiceFactory(cfg *Config, logger *zap.Logger) (messagingS
 			logger:         logger,
 		}
 	}, nil
-
 }
 
 type amqpConnectConfig struct {
-	// conenct config
+	// connect config
 	addr       string
 	saslConfig amqp.SASLType
 	tlsConfig  *tls.Config
@@ -202,7 +190,7 @@ func toAMQPAuthentication(config *Config) (amqp.SASLType, error) {
 		if plaintext.Password == "" || plaintext.Username == "" {
 			return nil, errMissingPlainTextParams
 		}
-		return connSASLPlain(plaintext.Username, plaintext.Password), nil
+		return connSASLPlain(plaintext.Username, string(plaintext.Password)), nil
 	}
 	if config.Auth.XAuth2 != nil {
 		xauth := config.Auth.XAuth2

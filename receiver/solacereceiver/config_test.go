@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package solacereceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/solacereceiver"
 
@@ -24,6 +13,9 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/solacereceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -38,7 +30,7 @@ func TestLoadConfig(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			id: component.NewIDWithName(componentType, "primary"),
+			id: component.NewIDWithName(metadata.Type, "primary"),
 			expected: &Config{
 				Broker: []string{"myHost:5671"},
 				Auth: Authentication{
@@ -49,7 +41,7 @@ func TestLoadConfig(t *testing.T) {
 				},
 				Queue:      "queue://#trace-profile123",
 				MaxUnacked: 1234,
-				TLS: configtls.TLSClientSetting{
+				TLS: configtls.ClientConfig{
 					Insecure:           false,
 					InsecureSkipVerify: false,
 				},
@@ -61,11 +53,11 @@ func TestLoadConfig(t *testing.T) {
 			},
 		},
 		{
-			id:          component.NewIDWithName(componentType, "noauth"),
+			id:          component.NewIDWithName(metadata.Type, "noauth"),
 			expectedErr: errMissingAuthDetails,
 		},
 		{
-			id:          component.NewIDWithName(componentType, "noqueue"),
+			id:          component.NewIDWithName(metadata.Type, "noqueue"),
 			expectedErr: errMissingQueueName,
 		},
 	}
@@ -77,13 +69,13 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
 			if tt.expectedErr != nil {
-				assert.ErrorIs(t, component.ValidateConfig(cfg), tt.expectedErr)
+				assert.ErrorContains(t, xconfmap.Validate(cfg), tt.expectedErr.Error())
 				return
 			}
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
@@ -92,15 +84,24 @@ func TestLoadConfig(t *testing.T) {
 func TestConfigValidateMissingAuth(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 	cfg.Queue = "someQueue"
-	err := component.ValidateConfig(cfg)
-	assert.Equal(t, errMissingAuthDetails, err)
+	err := xconfmap.Validate(cfg)
+	assert.ErrorContains(t, err, errMissingAuthDetails.Error())
+}
+
+func TestConfigValidateMultipleAuth(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	cfg.Queue = "someQueue"
+	cfg.Auth.PlainText = &SaslPlainTextConfig{"Username", "Password"}
+	cfg.Auth.XAuth2 = &SaslXAuth2Config{"Username", "Bearer"}
+	err := xconfmap.Validate(cfg)
+	assert.ErrorContains(t, err, errTooManyAuthDetails.Error())
 }
 
 func TestConfigValidateMissingQueue(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 	cfg.Auth.PlainText = &SaslPlainTextConfig{"Username", "Password"}
-	err := component.ValidateConfig(cfg)
-	assert.Equal(t, errMissingQueueName, err)
+	err := xconfmap.Validate(cfg)
+	assert.ErrorContains(t, err, errMissingQueueName.Error())
 }
 
 func TestConfigValidateMissingFlowControl(t *testing.T) {
@@ -110,7 +111,7 @@ func TestConfigValidateMissingFlowControl(t *testing.T) {
 	// this should never happen in reality, test validation anyway
 	cfg.Flow.DelayedRetry = nil
 	err := cfg.Validate()
-	assert.Equal(t, errMissingFlowControl, err)
+	assert.ErrorContains(t, err, errMissingFlowControl.Error())
 }
 
 func TestConfigValidateInvalidFlowControlDelayedRetryDelay(t *testing.T) {
@@ -121,7 +122,7 @@ func TestConfigValidateInvalidFlowControlDelayedRetryDelay(t *testing.T) {
 		Delay: -30 * time.Second,
 	}
 	err := cfg.Validate()
-	assert.Equal(t, errInvalidDelayedRetryDelay, err)
+	assert.ErrorContains(t, err, errInvalidDelayedRetryDelay.Error())
 }
 
 func TestConfigValidateSuccess(t *testing.T) {
@@ -145,7 +146,7 @@ func TestConfigValidateSuccess(t *testing.T) {
 			cfg := createDefaultConfig().(*Config)
 			cfg.Queue = "someQueue"
 			configure(cfg)
-			err := component.ValidateConfig(cfg)
+			err := xconfmap.Validate(cfg)
 			assert.NoError(t, err)
 		})
 	}

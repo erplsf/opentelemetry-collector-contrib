@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package chronyreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/chronyreceiver"
 
@@ -20,15 +9,15 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/receiver/scraperhelper"
+	"go.opentelemetry.io/collector/scraper/scraperhelper"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/chronyreceiver/internal/chrony"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/chronyreceiver/internal/metadata"
 )
 
 type Config struct {
-	scraperhelper.ScraperControllerSettings `mapstructure:",squash"`
-	metadata.MetricsBuilderConfig           `mapstructure:",squash"`
+	scraperhelper.ControllerConfig `mapstructure:",squash"`
+	metadata.MetricsBuilderConfig  `mapstructure:",squash"`
 	// Endpoint is the published address or unix socket
 	// that allows clients to connect to:
 	// The allowed format is:
@@ -37,8 +26,6 @@ type Config struct {
 	//
 	// The default value is unix:///var/run/chrony/chronyd.sock
 	Endpoint string `mapstructure:"endpoint"`
-	// Timeout controls the max time allowed to read data from chronyd
-	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 var (
@@ -47,13 +34,14 @@ var (
 	errInvalidValue = errors.New("invalid value")
 )
 
-func newDefaultCongfig() component.Config {
+func newDefaultConfig() component.Config {
+	cfg := scraperhelper.NewDefaultControllerConfig()
+	cfg.Timeout = 10 * time.Second
 	return &Config{
-		ScraperControllerSettings: scraperhelper.NewDefaultScraperControllerSettings(typeStr),
-		MetricsBuilderConfig:      metadata.DefaultMetricsBuilderConfig(),
+		ControllerConfig:     cfg,
+		MetricsBuilderConfig: metadata.DefaultMetricsBuilderConfig(),
 
 		Endpoint: "unix:///var/run/chrony/chronyd.sock",
-		Timeout:  10 * time.Second,
 	}
 }
 

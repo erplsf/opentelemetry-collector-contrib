@@ -1,16 +1,5 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package redactionprocessor // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor"
 
@@ -22,6 +11,8 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
@@ -35,6 +26,10 @@ type redaction struct {
 	ignoreList map[string]string
 	// Attribute values blocked in a span
 	blockRegexList map[string]*regexp.Regexp
+	// Attribute values allowed in a span
+	allowRegexList map[string]*regexp.Regexp
+	// Attribute keys blocked in a span
+	blockKeyRegexList map[string]*regexp.Regexp
 	// Redaction processor configuration
 	config *Config
 	// Logger
@@ -45,18 +40,31 @@ type redaction struct {
 func newRedaction(ctx context.Context, config *Config, logger *zap.Logger) (*redaction, error) {
 	allowList := makeAllowList(config)
 	ignoreList := makeIgnoreList(config)
-	blockRegexList, err := makeBlockRegexList(ctx, config)
+	blockRegexList, err := makeRegexList(ctx, config.BlockedValues)
 	if err != nil {
 		// TODO: Placeholder for an error metric in the next PR
 		return nil, fmt.Errorf("failed to process block list: %w", err)
 	}
+	blockKeysRegexList, err := makeRegexList(ctx, config.BlockedKeyPatterns)
+	if err != nil {
+		// TODO: Placeholder for an error metric in the next PR
+		return nil, fmt.Errorf("failed to process block keys list: %w", err)
+	}
+
+	allowRegexList, err := makeRegexList(ctx, config.AllowedValues)
+	if err != nil {
+		// TODO: Placeholder for an error metric in the next PR
+		return nil, fmt.Errorf("failed to process allow list: %w", err)
+	}
 
 	return &redaction{
-		allowList:      allowList,
-		ignoreList:     ignoreList,
-		blockRegexList: blockRegexList,
-		config:         config,
-		logger:         logger,
+		allowList:         allowList,
+		ignoreList:        ignoreList,
+		blockRegexList:    blockRegexList,
+		allowRegexList:    allowRegexList,
+		blockKeyRegexList: blockKeysRegexList,
+		config:            config,
+		logger:            logger,
 	}, nil
 }
 
@@ -68,6 +76,22 @@ func (s *redaction) processTraces(ctx context.Context, batch ptrace.Traces) (ptr
 		s.processResourceSpan(ctx, rs)
 	}
 	return batch, nil
+}
+
+func (s *redaction) processLogs(ctx context.Context, logs plog.Logs) (plog.Logs, error) {
+	for i := 0; i < logs.ResourceLogs().Len(); i++ {
+		rl := logs.ResourceLogs().At(i)
+		s.processResourceLog(ctx, rl)
+	}
+	return logs, nil
+}
+
+func (s *redaction) processMetrics(ctx context.Context, metrics pmetric.Metrics) (pmetric.Metrics, error) {
+	for i := 0; i < metrics.ResourceMetrics().Len(); i++ {
+		rm := metrics.ResourceMetrics().At(i)
+		s.processResourceMetric(ctx, rm)
+	}
+	return metrics, nil
 }
 
 // processResourceSpan processes the RS and all of its spans and then returns the last
@@ -90,11 +114,69 @@ func (s *redaction) processResourceSpan(ctx context.Context, rs ptrace.ResourceS
 	}
 }
 
+// processResourceLog processes the log resource and all of its logs and then returns the last
+// view metric context. The context can be used for tests
+func (s *redaction) processResourceLog(ctx context.Context, rl plog.ResourceLogs) {
+	rsAttrs := rl.Resource().Attributes()
+
+	s.processAttrs(ctx, rsAttrs)
+
+	for j := 0; j < rl.ScopeLogs().Len(); j++ {
+		ils := rl.ScopeLogs().At(j)
+		for k := 0; k < ils.LogRecords().Len(); k++ {
+			log := ils.LogRecords().At(k)
+			s.processAttrs(ctx, log.Attributes())
+		}
+	}
+}
+
+func (s *redaction) processResourceMetric(ctx context.Context, rm pmetric.ResourceMetrics) {
+	rsAttrs := rm.Resource().Attributes()
+
+	s.processAttrs(ctx, rsAttrs)
+
+	for j := 0; j < rm.ScopeMetrics().Len(); j++ {
+		ils := rm.ScopeMetrics().At(j)
+		for k := 0; k < ils.Metrics().Len(); k++ {
+			metric := ils.Metrics().At(k)
+			switch metric.Type() {
+			case pmetric.MetricTypeGauge:
+				dps := metric.Gauge().DataPoints()
+				for i := 0; i < dps.Len(); i++ {
+					s.processAttrs(ctx, dps.At(i).Attributes())
+				}
+			case pmetric.MetricTypeSum:
+				dps := metric.Sum().DataPoints()
+				for i := 0; i < dps.Len(); i++ {
+					s.processAttrs(ctx, dps.At(i).Attributes())
+				}
+			case pmetric.MetricTypeHistogram:
+				dps := metric.Histogram().DataPoints()
+				for i := 0; i < dps.Len(); i++ {
+					s.processAttrs(ctx, dps.At(i).Attributes())
+				}
+			case pmetric.MetricTypeExponentialHistogram:
+				dps := metric.ExponentialHistogram().DataPoints()
+				for i := 0; i < dps.Len(); i++ {
+					s.processAttrs(ctx, dps.At(i).Attributes())
+				}
+			case pmetric.MetricTypeSummary:
+				dps := metric.Summary().DataPoints()
+				for i := 0; i < dps.Len(); i++ {
+					s.processAttrs(ctx, dps.At(i).Attributes())
+				}
+			case pmetric.MetricTypeEmpty:
+			}
+		}
+	}
+}
+
 // processAttrs redacts the attributes of a resource span or a span
 func (s *redaction) processAttrs(_ context.Context, attributes pcommon.Map) {
 	// TODO: Use the context for recording metrics
 	var toDelete []string
 	var toBlock []string
+	var allowed []string
 	var ignoring []string
 
 	// Identify attributes to redact and mask in the following sequence
@@ -122,15 +204,37 @@ func (s *redaction) processAttrs(_ context.Context, attributes pcommon.Map) {
 			}
 		}
 
-		// Mask any blocked values for the other attributes
 		strVal := value.Str()
-		for _, compiledRE := range s.blockRegexList {
-			match := compiledRE.MatchString(strVal)
-			if match {
+		// Allow any values matching the allowed list regex
+		for _, compiledRE := range s.allowRegexList {
+			if match := compiledRE.MatchString(strVal); match {
+				allowed = append(allowed, k)
+				return true
+			}
+		}
+
+		// Mask any blocked keys for the other attributes
+		for _, compiledRE := range s.blockKeyRegexList {
+			if match := compiledRE.MatchString(k); match {
 				toBlock = append(toBlock, k)
+				maskedValue := compiledRE.ReplaceAllString(strVal, "****")
+				value.SetStr(maskedValue)
+				return true
+			}
+		}
+
+		// Mask any blocked values for the other attributes
+		var matched bool
+		for _, compiledRE := range s.blockRegexList {
+			if match := compiledRE.MatchString(strVal); match {
+				if !matched {
+					matched = true
+					toBlock = append(toBlock, k)
+				}
 
 				maskedValue := compiledRE.ReplaceAllString(strVal, "****")
 				value.SetStr(maskedValue)
+				strVal = maskedValue
 			}
 		}
 		return true
@@ -143,6 +247,7 @@ func (s *redaction) processAttrs(_ context.Context, attributes pcommon.Map) {
 	// Add diagnostic information to the span
 	s.addMetaAttrs(toDelete, attributes, redactedKeys, redactedKeyCount)
 	s.addMetaAttrs(toBlock, attributes, maskedValues, maskedValueCount)
+	s.addMetaAttrs(allowed, attributes, allowedValues, allowedValueCount)
 	s.addMetaAttrs(ignoring, attributes, "", ignoredKeyCount)
 }
 
@@ -170,13 +275,15 @@ func (s *redaction) addMetaAttrs(redactedAttrs []string, attributes pcommon.Map,
 }
 
 const (
-	debug            = "debug"
-	info             = "info"
-	redactedKeys     = "redaction.redacted.keys"
-	redactedKeyCount = "redaction.redacted.count"
-	maskedValues     = "redaction.masked.keys"
-	maskedValueCount = "redaction.masked.count"
-	ignoredKeyCount  = "redaction.ignored.count"
+	debug             = "debug"
+	info              = "info"
+	redactedKeys      = "redaction.redacted.keys"
+	redactedKeyCount  = "redaction.redacted.count"
+	maskedValues      = "redaction.masked.keys"
+	maskedValueCount  = "redaction.masked.count"
+	allowedValues     = "redaction.allowed.keys"
+	allowedValueCount = "redaction.allowed.count"
+	ignoredKeyCount   = "redaction.ignored.count"
 )
 
 // makeAllowList sets up a lookup table of allowed span attribute keys
@@ -213,16 +320,16 @@ func makeIgnoreList(c *Config) map[string]string {
 	return ignoreList
 }
 
-// makeBlockRegexList precompiles all the blocked regex patterns
-func makeBlockRegexList(_ context.Context, config *Config) (map[string]*regexp.Regexp, error) {
-	blockRegexList := make(map[string]*regexp.Regexp, len(config.BlockedValues))
-	for _, pattern := range config.BlockedValues {
+// makeRegexList precompiles all the regex patterns in the defined list
+func makeRegexList(_ context.Context, valuesList []string) (map[string]*regexp.Regexp, error) {
+	regexList := make(map[string]*regexp.Regexp, len(valuesList))
+	for _, pattern := range valuesList {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			// TODO: Placeholder for an error metric in the next PR
-			return nil, fmt.Errorf("error compiling regex in block list: %w", err)
+			return nil, fmt.Errorf("error compiling regex in list: %w", err)
 		}
-		blockRegexList[pattern] = re
+		regexList[pattern] = re
 	}
-	return blockRegexList, nil
+	return regexList, nil
 }

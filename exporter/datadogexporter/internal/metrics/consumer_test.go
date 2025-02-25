@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package metrics
 
@@ -18,18 +7,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/datadog-agent/pkg/trace/pb"
+	"github.com/DataDog/datadog-agent/comp/otelcol/otlp/testutil"
 	"github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes"
 	"github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes/source"
 	"github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 	"go.uber.org/zap"
-
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/datadogexporter/internal/testutil"
 )
 
 type testProvider string
@@ -39,7 +27,12 @@ func (t testProvider) Source(context.Context) (source.Source, error) {
 }
 
 func newTranslator(t *testing.T, logger *zap.Logger) *metrics.Translator {
-	tr, err := metrics.NewTranslator(logger,
+	set := componenttest.NewNopTelemetrySettings()
+	set.Logger = logger
+	attributesTranslator, err := attributes.NewTranslator(set)
+	require.NoError(t, err)
+	tr, err := metrics.NewTranslator(set,
+		attributesTranslator,
 		metrics.WithHistogramMode(metrics.HistogramModeDistributions),
 		metrics.WithNumberMode(metrics.NumberModeCumulativeToDelta),
 		metrics.WithFallbackSourceProvider(testProvider("fallbackHostname")),
@@ -70,11 +63,12 @@ func TestRunningMetrics(t *testing.T) {
 	tr := newTranslator(t, logger)
 
 	ctx := context.Background()
-	consumer := NewConsumer()
-	assert.NoError(t, tr.MapMetrics(ctx, ms, consumer))
+	consumer := NewConsumer(nil)
+	metadata, err := tr.MapMetrics(ctx, ms, consumer, nil)
+	assert.NoError(t, err)
 
 	var runningHostnames []string
-	for _, metric := range consumer.runningMetrics(0, component.BuildInfo{}) {
+	for _, metric := range consumer.runningMetrics(0, component.BuildInfo{}, metadata) {
 		for _, res := range metric.Resources {
 			runningHostnames = append(runningHostnames, *res.Name)
 		}
@@ -113,10 +107,11 @@ func TestTagsMetrics(t *testing.T) {
 	tr := newTranslator(t, logger)
 
 	ctx := context.Background()
-	consumer := NewConsumer()
-	assert.NoError(t, tr.MapMetrics(ctx, ms, consumer))
+	consumer := NewConsumer(nil)
+	metadata, err := tr.MapMetrics(ctx, ms, consumer, nil)
+	assert.NoError(t, err)
 
-	runningMetrics := consumer.runningMetrics(0, component.BuildInfo{})
+	runningMetrics := consumer.runningMetrics(0, component.BuildInfo{}, metadata)
 	var runningTags []string
 	var runningHostnames []string
 	for _, metric := range runningMetrics {
@@ -129,22 +124,4 @@ func TestTagsMetrics(t *testing.T) {
 	assert.ElementsMatch(t, runningHostnames, []string{"", "", ""})
 	assert.Len(t, runningMetrics, 3)
 	assert.ElementsMatch(t, runningTags, []string{"task_arn:task-arn-1", "task_arn:task-arn-2", "task_arn:task-arn-3"})
-}
-
-func TestConsumeAPMStats(t *testing.T) {
-	c := NewConsumer()
-	for _, sp := range testutil.StatsPayloads {
-		c.ConsumeAPMStats(sp)
-	}
-	require.Len(t, c.as, len(testutil.StatsPayloads))
-	require.ElementsMatch(t, c.as, testutil.StatsPayloads)
-	_, _, out := c.All(0, component.BuildInfo{}, []string{})
-	require.ElementsMatch(t, out, testutil.StatsPayloads)
-	_, _, out = c.All(0, component.BuildInfo{}, []string{"extra:key"})
-	var copies []pb.ClientStatsPayload
-	for _, sp := range testutil.StatsPayloads {
-		sp.Tags = append(sp.Tags, "extra:key")
-		copies = append(copies, sp)
-	}
-	require.ElementsMatch(t, out, copies)
 }

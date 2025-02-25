@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package traces // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter/internal/traces"
 
@@ -55,27 +44,23 @@ func NewSender(ctx context.Context, endpoint string, client *http.Client, authPa
 func (s *Sender) SendTraces(ctx context.Context, td ptrace.Traces) error {
 	ingestResponse, err := s.traceIngestClient.SendTraces(ctx, td)
 	if err != nil {
-		return consumererror.NewPermanent(err)
-	}
-	if ingestResponse != nil {
-
-		if ingestResponse.Success {
-			return nil
-		}
-		if ingestResponse.RetryAfter > 0 {
-			return exporterhelper.NewThrottleRetry(ingestResponse.Error, time.Duration(ingestResponse.RetryAfter)*time.Second)
-		}
-		if ingestResponse.StatusCode == http.StatusMultiStatus {
-			for _, status := range ingestResponse.MultiStatus {
-				if isPermanentClientFailure(int(status.Code)) {
-					return consumererror.NewPermanent(fmt.Errorf("permanent failure error %s, complete error log %w", status.Error, ingestResponse.Error))
+		if ingestResponse != nil {
+			if ingestResponse.RetryAfter > 0 {
+				return exporterhelper.NewThrottleRetry(ingestResponse.Error, time.Duration(ingestResponse.RetryAfter)*time.Second)
+			}
+			if ingestResponse.StatusCode == http.StatusMultiStatus {
+				for _, status := range ingestResponse.MultiStatus {
+					if isPermanentClientFailure(int(status.Code)) {
+						return consumererror.NewPermanent(fmt.Errorf("permanent failure error %s, complete error log %w", status.Error, ingestResponse.Error))
+					}
 				}
 			}
+			if isPermanentClientFailure(ingestResponse.StatusCode) {
+				return consumererror.NewPermanent(ingestResponse.Error)
+			}
+			return ingestResponse.Error
 		}
-		if isPermanentClientFailure(ingestResponse.StatusCode) {
-			return consumererror.NewPermanent(ingestResponse.Error)
-		}
-		return ingestResponse.Error
+		return consumererror.NewPermanent(err)
 	}
 	return nil
 }

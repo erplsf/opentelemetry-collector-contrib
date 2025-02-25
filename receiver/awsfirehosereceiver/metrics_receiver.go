@@ -1,29 +1,24 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package awsfirehosereceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awsfirehosereceiver"
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 
-	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/consumererror"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awsfirehosereceiver/internal/unmarshaler"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awsfirehosereceiver/internal/unmarshaler/cwmetricstream"
 )
+
+const defaultMetricsRecordType = cwmetricstream.TypeStr
 
 // The metricsConsumer implements the firehoseConsumer
 // to use a metrics consumer and unmarshaler.
@@ -31,9 +26,9 @@ type metricsConsumer struct {
 	// consumer passes the translated metrics on to the
 	// next consumer.
 	consumer consumer.Metrics
-	// unmarshaler is the configured MetricsUnmarshaler
+	// unmarshaler is the configured pmetric.Unmarshaler
 	// to use when processing the records.
-	unmarshaler unmarshaler.MetricsUnmarshaler
+	unmarshaler pmetric.Unmarshaler
 }
 
 var _ firehoseConsumer = (*metricsConsumer)(nil)
@@ -42,28 +37,27 @@ var _ firehoseConsumer = (*metricsConsumer)(nil)
 // with a metricsConsumer.
 func newMetricsReceiver(
 	config *Config,
-	set receiver.CreateSettings,
-	unmarshalers map[string]unmarshaler.MetricsUnmarshaler,
+	set receiver.Settings,
+	unmarshalers map[string]pmetric.Unmarshaler,
 	nextConsumer consumer.Metrics,
 ) (receiver.Metrics, error) {
-	if nextConsumer == nil {
-		return nil, component.ErrNilNextConsumer
+	recordType := config.RecordType
+	if recordType == "" {
+		recordType = defaultMetricsRecordType
 	}
-
-	configuredUnmarshaler := unmarshalers[config.RecordType]
+	configuredUnmarshaler := unmarshalers[recordType]
 	if configuredUnmarshaler == nil {
-		return nil, errUnrecognizedRecordType
+		return nil, fmt.Errorf("%w: recordType = %s", errUnrecognizedRecordType, recordType)
 	}
 
-	mc := &metricsConsumer{
+	c := &metricsConsumer{
 		consumer:    nextConsumer,
 		unmarshaler: configuredUnmarshaler,
 	}
-
 	return &firehoseReceiver{
 		settings: set,
 		config:   config,
-		consumer: mc,
+		consumer: c,
 	}, nil
 }
 
@@ -71,26 +65,34 @@ func newMetricsReceiver(
 // single pmetric.Metrics. If there are common attributes available, then it will
 // attach those to each of the pcommon.Resources. It will send the final result
 // to the next consumer.
-func (mc *metricsConsumer) Consume(ctx context.Context, records [][]byte, commonAttributes map[string]string) (int, error) {
-	md, err := mc.unmarshaler.Unmarshal(records)
-	if err != nil {
-		return http.StatusBadRequest, err
-	}
+func (c *metricsConsumer) Consume(ctx context.Context, nextRecord nextRecordFunc, commonAttributes map[string]string) (int, error) {
+	for {
+		record, err := nextRecord()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		metrics, err := c.unmarshaler.UnmarshalMetrics(record)
+		if err != nil {
+			return http.StatusBadRequest, err
+		}
 
-	if commonAttributes != nil {
-		for i := 0; i < md.ResourceMetrics().Len(); i++ {
-			rm := md.ResourceMetrics().At(i)
-			for k, v := range commonAttributes {
-				if _, found := rm.Resource().Attributes().Get(k); !found {
-					rm.Resource().Attributes().PutStr(k, v)
+		if commonAttributes != nil {
+			for i := 0; i < metrics.ResourceMetrics().Len(); i++ {
+				rm := metrics.ResourceMetrics().At(i)
+				for k, v := range commonAttributes {
+					if _, found := rm.Resource().Attributes().Get(k); !found {
+						rm.Resource().Attributes().PutStr(k, v)
+					}
 				}
 			}
 		}
-	}
 
-	err = mc.consumer.ConsumeMetrics(ctx, md)
-	if err != nil {
-		return http.StatusInternalServerError, err
+		if err := c.consumer.ConsumeMetrics(ctx, metrics); err != nil {
+			if consumererror.IsPermanent(err) {
+				return http.StatusBadRequest, err
+			}
+			return http.StatusServiceUnavailable, err
+		}
 	}
 	return http.StatusOK, nil
 }

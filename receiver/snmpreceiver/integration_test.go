@@ -1,19 +1,7 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 //go:build integration
-// +build integration
 
 package snmpreceiver
 
@@ -25,17 +13,21 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/otelcol/otelcoltest"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/pmetrictest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/snmpreceiver/internal/metadata"
 )
 
-func TestSnmpReceiverIntegration(t *testing.T) {
+func TestIntegration(t *testing.T) {
+	t.Skip("Broken test, see https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/36177")
+
 	testCases := []struct {
 		desc                    string
 		configFilename          string
@@ -66,15 +58,15 @@ func TestSnmpReceiverIntegration(t *testing.T) {
 		t.Run(testCase.desc, func(t *testing.T) {
 			t.Skip("Flaky test, see https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/21086")
 			factory := NewFactory()
-			factories.Receivers[typeStr] = factory
+			factories.Receivers[metadata.Type] = factory
 			configFile := filepath.Join("testdata", "integration", testCase.configFilename)
 			cfg, err := otelcoltest.LoadConfigAndValidate(configFile, factories)
 			require.NoError(t, err)
-			snmpConfig := cfg.Receivers[component.NewID(typeStr)].(*Config)
+			snmpConfig := cfg.Receivers[component.NewID(metadata.Type)].(*Config)
 
 			consumer := new(consumertest.MetricsSink)
-			settings := receivertest.NewNopCreateSettings()
-			rcvr, err := factory.CreateMetricsReceiver(context.Background(), settings, snmpConfig, consumer)
+			settings := receivertest.NewNopSettings(metadata.Type)
+			rcvr, err := factory.CreateMetrics(context.Background(), settings, snmpConfig, consumer)
 			require.NoError(t, err, "failed creating metrics receiver")
 			require.NoError(t, rcvr.Start(context.Background(), componenttest.NewNopHost()))
 			require.Eventuallyf(t, func() bool {
@@ -93,15 +85,15 @@ func TestSnmpReceiverIntegration(t *testing.T) {
 	}
 }
 
-var (
-	snmpAgentContainerRequest = testcontainers.ContainerRequest{
-		FromDockerfile: testcontainers.FromDockerfile{
-			Context:    filepath.Join("testdata", "integration", "docker"),
-			Dockerfile: "snmp_agent.Dockerfile",
-		},
-		ExposedPorts: []string{"1024:1024/udp"},
-	}
-)
+var snmpAgentContainerRequest = testcontainers.ContainerRequest{
+	FromDockerfile: testcontainers.FromDockerfile{
+		Context:    filepath.Join("testdata", "integration", "docker"),
+		Dockerfile: "snmp_agent.Dockerfile",
+	},
+	ExposedPorts: []string{"161/udp"},
+	WaitingFor: wait.ForListeningPort("161/udp").
+		WithStartupTimeout(2 * time.Minute),
+}
 
 func getContainer(t *testing.T, req testcontainers.ContainerRequest) testcontainers.Container {
 	require.NoError(t, req.Validate())

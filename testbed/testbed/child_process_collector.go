@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package testbed // import "github.com/open-telemetry/opentelemetry-collector-contrib/testbed/testbed"
 
@@ -24,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -31,8 +21,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/process"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 // childProcessCollector implements the OtelcolRunner interface as a child process on the same machine executing
@@ -41,7 +31,7 @@ type childProcessCollector struct {
 	// Path to agent executable. If unset the default executable in
 	// bin/otelcol_{{.GOOS}}_{{.GOARCH}} will be used.
 	// Can be set for example to use the unstable executable for a specific test.
-	AgentExePath string
+	agentExePath string
 
 	// Descriptive name of the process
 	name string
@@ -51,6 +41,9 @@ type childProcessCollector struct {
 
 	// Command to execute
 	cmd *exec.Cmd
+
+	// additional env vars (os.Environ() populated by default)
+	additionalEnv map[string]string
 
 	// Various starting/stopping flags
 	isStarted  bool
@@ -92,9 +85,31 @@ type childProcessCollector struct {
 	ramMiBMax uint32
 }
 
-// NewChildProcessCollector crewtes a new OtelcolRunner as a child process on the same machine executing the test.
-func NewChildProcessCollector() OtelcolRunner {
-	return &childProcessCollector{}
+type ChildProcessOption func(*childProcessCollector)
+
+// NewChildProcessCollector creates a new OtelcolRunner as a child process on the same machine executing the test.
+func NewChildProcessCollector(options ...ChildProcessOption) OtelcolRunner {
+	col := &childProcessCollector{additionalEnv: map[string]string{}}
+
+	for _, option := range options {
+		option(col)
+	}
+
+	return col
+}
+
+// WithAgentExePath sets the path of the Collector executable
+func WithAgentExePath(exePath string) ChildProcessOption {
+	return func(cpc *childProcessCollector) {
+		cpc.agentExePath = exePath
+	}
+}
+
+// WithEnvVar sets an additional environment variable for the process
+func WithEnvVar(k, v string) ChildProcessOption {
+	return func(cpc *childProcessCollector) {
+		cpc.additionalEnv[k] = v
+	}
 }
 
 func (cp *childProcessCollector) PrepareConfig(configStr string) (configCleanup func(), err error) {
@@ -161,15 +176,14 @@ func expandExeFileName(exeName string) string {
 // the process to.
 // cmdArgs is the command line arguments to pass to the process.
 func (cp *childProcessCollector) Start(params StartParams) error {
-
 	cp.name = params.Name
 	cp.doneSignal = make(chan struct{})
 	cp.resourceSpec = params.resourceSpec
 
-	if cp.AgentExePath == "" {
-		cp.AgentExePath = GlobalConfig.DefaultAgentExeRelativeFile
+	if cp.agentExePath == "" {
+		cp.agentExePath = GlobalConfig.DefaultAgentExeRelativeFile
 	}
-	exePath := expandExeFileName(cp.AgentExePath)
+	exePath := expandExeFileName(cp.agentExePath)
 	exePath, err := filepath.Abs(exePath)
 	if err != nil {
 		return err
@@ -200,6 +214,17 @@ func (cp *childProcessCollector) Start(params StartParams) error {
 	}
 	// #nosec
 	cp.cmd = exec.Command(exePath, args...)
+	cp.cmd.Env = os.Environ()
+
+	// update env deterministically
+	var additionalEnvVars []string
+	for k := range cp.additionalEnv {
+		additionalEnvVars = append(additionalEnvVars, k)
+	}
+	sort.Strings(additionalEnvVars)
+	for _, k := range additionalEnvVars {
+		cp.cmd.Env = append(cp.cmd.Env, fmt.Sprintf("%s=%s", k, cp.additionalEnv[k]))
+	}
 
 	// Capture standard output and standard error.
 	cp.cmd.Stdout = logFile
@@ -223,7 +248,6 @@ func (cp *childProcessCollector) Stop() (stopped bool, err error) {
 		return false, nil
 	}
 	cp.stopOnce.Do(func() {
-
 		if !cp.isStarted {
 			// Process wasn't started, nothing to stop.
 			return
@@ -310,12 +334,12 @@ func (cp *childProcessCollector) WatchResourceConsumption() error {
 	for start := time.Now(); time.Since(start) < time.Minute; {
 		cp.fetchRAMUsage()
 		cp.fetchCPUUsage()
-		if err := cp.checkAllowedResourceUsage(); err != nil {
-			log.Printf("Allowed usage of resources is too high before test starts wait for one second : %v", err)
-			time.Sleep(time.Second)
-		} else {
+		err := cp.checkAllowedResourceUsage()
+		if err == nil {
 			break
 		}
+		log.Printf("Allowed usage of resources is too high before test starts wait for one second : %v", err)
+		time.Sleep(time.Second)
 	}
 
 	remainingFailures := cp.resourceSpec.MaxConsecutiveFailures
@@ -442,7 +466,10 @@ func (cp *childProcessCollector) GetResourceConsumption() string {
 
 // GetTotalConsumption returns total resource consumption since start of process
 func (cp *childProcessCollector) GetTotalConsumption() *ResourceConsumption {
-	rc := &ResourceConsumption{}
+	rc := &ResourceConsumption{
+		CPUPercentLimit: float64(cp.resourceSpec.ExpectedMaxCPU),
+		RAMMiBLimit:     cp.resourceSpec.ExpectedMaxRAM,
+	}
 
 	if cp.processMon != nil {
 		// Get total elapsed time since process start

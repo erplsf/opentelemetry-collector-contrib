@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package alibabacloudlogserviceexporter
 
@@ -40,7 +29,7 @@ func createLogData(numberOfLogs int) plog.Logs {
 	logs := plog.NewLogs()
 	logs.ResourceLogs().AppendEmpty() // Add an empty ResourceLogs
 	rl := logs.ResourceLogs().AppendEmpty()
-	rl.Resource().Attributes().PutStr("resouceKey", "resourceValue")
+	rl.Resource().Attributes().PutStr("resourceKey", "resourceValue")
 	rl.Resource().Attributes().PutStr(conventions.AttributeServiceName, "test-log-service-exporter")
 	rl.Resource().Attributes().PutStr(conventions.AttributeHostName, "test-host")
 	sl := rl.ScopeLogs().AppendEmpty()
@@ -86,7 +75,7 @@ func TestLogsDataToLogService(t *testing.T) {
 	totalLogCount := 10
 	validLogCount := totalLogCount - 1
 	gotLogs := logDataToLogService(createLogData(10))
-	assert.Equal(t, len(gotLogs), 9)
+	assert.Len(t, gotLogs, 9)
 
 	gotLogPairs := make([][]logKeyValuePair, 0, len(gotLogs))
 
@@ -99,7 +88,6 @@ func TestLogsDataToLogService(t *testing.T) {
 			})
 		}
 		gotLogPairs = append(gotLogPairs, pairs)
-
 	}
 
 	wantLogs := make([][]logKeyValuePair, 0, validLogCount)
@@ -109,7 +97,6 @@ func TestLogsDataToLogService(t *testing.T) {
 		return
 	}
 	for j := 0; j < validLogCount; j++ {
-
 		sort.Sort(logKeyValuePairs(gotLogPairs[j]))
 		sort.Sort(logKeyValuePairs(wantLogs[j]))
 		assert.Equal(t, wantLogs[j], gotLogPairs[j])

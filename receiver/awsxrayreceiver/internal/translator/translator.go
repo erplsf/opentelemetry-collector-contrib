@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package translator // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awsxrayreceiver/internal/translator"
 
@@ -21,7 +10,7 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	conventions "go.opentelemetry.io/collector/semconv/v1.18.0"
 
 	awsxray "github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/xray"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/xray/telemetry"
@@ -86,7 +75,6 @@ func ToTraces(rawSeg []byte, recorder telemetry.Recorder) (ptrace.Traces, int, e
 }
 
 func segToSpans(seg awsxray.Segment, traceID, parentID *string, spans ptrace.SpanSlice) (ptrace.Span, error) {
-
 	span := spans.AppendEmpty()
 
 	err := populateSpan(&seg, traceID, parentID, span)
@@ -122,7 +110,6 @@ func segToSpans(seg awsxray.Segment, traceID, parentID *string, spans ptrace.Spa
 }
 
 func populateSpan(seg *awsxray.Segment, traceID, parentID *string, span ptrace.Span) error {
-
 	attrs := span.Attributes()
 	attrs.Clear()
 	attrs.EnsureCapacity(initAttrCapacity)
@@ -140,13 +127,11 @@ func populateSpan(seg *awsxray.Segment, traceID, parentID *string, span ptrace.S
 		if err != nil {
 			return err
 		}
-
 	} else {
 		traceIDBytes, err = decodeXRayTraceID(seg.TraceID)
 		if err != nil {
 			return err
 		}
-
 	}
 
 	// decode parent id

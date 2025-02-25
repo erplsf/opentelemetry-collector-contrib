@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package httpcheckreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/httpcheckreceiver"
 
@@ -20,7 +9,7 @@ import (
 	"net/url"
 
 	"go.opentelemetry.io/collector/config/confighttp"
-	"go.opentelemetry.io/collector/receiver/scraperhelper"
+	"go.opentelemetry.io/collector/scraper/scraperhelper"
 	"go.uber.org/multierr"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/httpcheckreceiver/internal/metadata"
@@ -28,27 +17,62 @@ import (
 
 // Predefined error responses for configuration validation failures
 var (
-	errInvalidEndpoint = errors.New(`"endpoint" must be in the form of <scheme>://<hostname>:<port>`)
+	errInvalidEndpoint = errors.New(`"endpoint" must be in the form of <scheme>://<hostname>[:<port>]`)
+	errMissingEndpoint = errors.New("at least one of 'endpoint' or 'endpoints' must be specified")
 )
-
-const defaultEndpoint = "http://localhost:80"
 
 // Config defines the configuration for the various elements of the receiver agent.
 type Config struct {
-	scraperhelper.ScraperControllerSettings `mapstructure:",squash"`
-	confighttp.HTTPClientSettings           `mapstructure:",squash"`
-	metadata.MetricsBuilderConfig           `mapstructure:",squash"`
-	Method                                  string `mapstructure:"method"`
+	scraperhelper.ControllerConfig `mapstructure:",squash"`
+	metadata.MetricsBuilderConfig  `mapstructure:",squash"`
+	Targets                        []*targetConfig `mapstructure:"targets"`
 }
 
-// Validate validates the configuration by checking for missing or invalid fields
+// targetConfig defines configuration for individual HTTP checks.
+type targetConfig struct {
+	confighttp.ClientConfig `mapstructure:",squash"`
+	Method                  string   `mapstructure:"method"`
+	Endpoints               []string `mapstructure:"endpoints"` // Field for a list of endpoints
+}
+
+// Validate validates an individual targetConfig.
+func (cfg *targetConfig) Validate() error {
+	var err error
+
+	// Ensure at least one of 'endpoint' or 'endpoints' is specified.
+	if cfg.ClientConfig.Endpoint == "" && len(cfg.Endpoints) == 0 {
+		err = multierr.Append(err, errMissingEndpoint)
+	}
+
+	// Validate the single endpoint in ClientConfig.
+	if cfg.ClientConfig.Endpoint != "" {
+		if _, parseErr := url.ParseRequestURI(cfg.ClientConfig.Endpoint); parseErr != nil {
+			err = multierr.Append(err, fmt.Errorf("%s: %w", errInvalidEndpoint.Error(), parseErr))
+		}
+	}
+
+	// Validate each endpoint in the Endpoints list.
+	for _, endpoint := range cfg.Endpoints {
+		if _, parseErr := url.ParseRequestURI(endpoint); parseErr != nil {
+			err = multierr.Append(err, fmt.Errorf("%s: %w", errInvalidEndpoint.Error(), parseErr))
+		}
+	}
+
+	return err
+}
+
+// Validate validates the top-level Config by checking each targetConfig.
 func (cfg *Config) Validate() error {
 	var err error
 
-	_, parseErr := url.Parse(cfg.Endpoint)
-	if parseErr != nil {
-		wrappedErr := fmt.Errorf("%s: %w", errInvalidEndpoint.Error(), parseErr)
-		err = multierr.Append(err, wrappedErr)
+	// Ensure at least one target is configured.
+	if len(cfg.Targets) == 0 {
+		err = multierr.Append(err, errors.New("no targets configured"))
+	}
+
+	// Validate each targetConfig.
+	for _, target := range cfg.Targets {
+		err = multierr.Append(err, target.Validate())
 	}
 
 	return err

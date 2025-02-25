@@ -1,20 +1,10 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package mysqlreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/mysqlreceiver"
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -22,13 +12,15 @@ import (
 
 	// registers the mysql driver
 	"github.com/go-sql-driver/mysql"
+	"github.com/hashicorp/go-version"
 )
 
 type client interface {
 	Connect() error
-	getVersion() (string, error)
+	getVersion() (*version.Version, error)
 	getGlobalStats() (map[string]string, error)
 	getInnodbStats() (map[string]string, error)
+	getTableStats() ([]TableStats, error)
 	getTableIoWaitsStats() ([]TableIoWaitsStats, error)
 	getIndexIoWaitsStats() ([]IndexIoWaitsStats, error)
 	getStatementEventsStats() ([]StatementEventStats, error)
@@ -65,6 +57,15 @@ type TableIoWaitsStats struct {
 type IndexIoWaitsStats struct {
 	IoWaitsStats
 	index string
+}
+
+type TableStats struct {
+	schema           string
+	name             string
+	rows             int64
+	averageRowLength int64
+	dataLength       int64
+	indexLength      int64
 }
 
 type StatementEventStats struct {
@@ -110,78 +111,110 @@ type tableLockWaitEventStats struct {
 }
 
 type ReplicaStatusStats struct {
-	replicaIOState            string
-	sourceHost                string
-	sourceUser                string
-	sourcePort                int64
-	connectRetry              int64
-	sourceLogFile             string
-	readSourceLogPos          int64
-	relayLogFile              string
-	relayLogPos               int64
-	relaySourceLogFile        string
-	replicaIORunning          string
-	replicaSQLRunning         string
-	replicateDoDB             string
-	replicateIgnoreDB         string
-	replicateDoTable          string
-	replicateIgnoreTable      string
-	replicateWildDoTable      string
-	replicateWildIgnoreTable  string
-	lastErrno                 int64
-	lastError                 string
-	skipCounter               int64
-	execSourceLogPos          int64
-	relayLogSpace             int64
-	untilCondition            string
-	untilLogFile              string
-	untilLogPos               string
-	sourceSSLAllowed          string
-	sourceSSLCAFile           string
-	sourceSSLCAPath           string
-	sourceSSLCert             string
-	sourceSSLCipher           string
-	sourceSSLKey              string
-	secondsBehindSource       sql.NullInt64
-	sourceSSLVerifyServerCert string
-	lastIOErrno               int64
-	lastIOError               string
-	lastSQLErrno              int64
-	lastSQLError              string
-	replicateIgnoreServerIds  string
-	sourceServerID            int64
-	sourceUUID                string
-	sourceInfoFile            string
-	sqlDelay                  int64
-	sqlRemainingDelay         sql.NullInt64
-	replicaSQLRunningState    string
-	sourceRetryCount          int64
-	sourceBind                string
-	lastIOErrorTimestamp      string
-	lastSQLErrorTimestamp     string
-	sourceSSLCrl              string
-	sourceSSLCrlpath          string
-	retrievedGtidSet          string
-	executedGtidSet           string
-	autoPosition              string
-	replicateRewriteDB        string
-	channelName               string
-	sourceTLSVersion          string
-	sourcePublicKeyPath       string
-	getSourcePublicKey        int64
-	networkNamespace          string
+	replicaIOState              string
+	sourceHost                  string
+	sourceUser                  string
+	sourcePort                  int64
+	connectRetry                int64
+	sourceLogFile               string
+	readSourceLogPos            int64
+	relayLogFile                string
+	relayLogPos                 int64
+	relaySourceLogFile          string
+	replicaIORunning            string
+	replicaSQLRunning           string
+	replicateDoDB               string
+	replicateIgnoreDB           string
+	replicateDoTable            string
+	replicateIgnoreTable        string
+	replicateWildDoTable        string
+	replicateWildIgnoreTable    string
+	lastErrno                   int64
+	lastError                   string
+	skipCounter                 int64
+	execSourceLogPos            int64
+	relayLogSpace               int64
+	untilCondition              string
+	untilLogFile                string
+	untilLogPos                 string
+	sourceSSLAllowed            string
+	sourceSSLCAFile             string
+	sourceSSLCAPath             string
+	sourceSSLCert               string
+	sourceSSLCipher             string
+	sourceSSLKey                string
+	secondsBehindSource         sql.NullInt64
+	sourceSSLVerifyServerCert   string
+	lastIOErrno                 int64
+	lastIOError                 string
+	lastSQLErrno                int64
+	lastSQLError                string
+	replicateIgnoreServerIDs    string
+	sourceServerID              int64
+	sourceUUID                  string
+	sourceInfoFile              string
+	sqlDelay                    int64
+	sqlRemainingDelay           sql.NullInt64
+	replicaSQLRunningState      string
+	sourceRetryCount            int64
+	sourceBind                  string
+	lastIOErrorTimestamp        string
+	lastSQLErrorTimestamp       string
+	sourceSSLCrl                string
+	sourceSSLCrlpath            string
+	retrievedGtidSet            string
+	executedGtidSet             string
+	autoPosition                string
+	replicateRewriteDB          string
+	channelName                 string
+	sourceTLSVersion            string
+	sourcePublicKeyPath         string
+	getSourcePublicKey          int64
+	networkNamespace            string
+	usingGtid                   string
+	gtidIoPos                   string
+	slaveDdlGroups              int64
+	slaveNonTransactionalGroups int64
+	slaveTransactionalGroups    int64
+	retriedTransactions         int64
+	maxRelayLogSize             int64
+	executedLogEntries          int64
+	slaveReceivedHeartbeats     int64
+	slaveHeartbeatPeriod        int64
+	gtidSlavePos                string
+	masterLastEventTime         string
+	slaveLastEventTime          string
+	masterSlaveTimeDiff         string
+	parallelMode                string
+	replicateDoDomainIDs        string
+	replicateIgnoreDomainIDs    string
 }
 
 var _ client = (*mySQLClient)(nil)
 
-func newMySQLClient(conf *Config) client {
+func newMySQLClient(conf *Config) (client, error) {
+	tls, err := conf.TLS.LoadTLSConfig(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig := ""
+	if tls != nil {
+		err := mysql.RegisterTLSConfig("custom", tls)
+		if err != nil {
+			return nil, err
+		}
+		tlsConfig = "custom"
+	}
+
 	driverConf := mysql.Config{
 		User:                 conf.Username,
-		Passwd:               conf.Password,
-		Net:                  conf.Transport,
+		Passwd:               string(conf.Password),
+		Net:                  string(conf.Transport),
 		Addr:                 conf.Endpoint,
 		DBName:               conf.Database,
 		AllowNativePasswords: conf.AllowNativePasswords,
+		TLS:                  tls,
+		TLSConfig:            tlsConfig,
 	}
 	connStr := driverConf.FormatDSN()
 
@@ -190,7 +223,7 @@ func newMySQLClient(conf *Config) client {
 		statementEventsDigestTextLimit: conf.StatementEvents.DigestTextLimit,
 		statementEventsLimit:           conf.StatementEvents.Limit,
 		statementEventsTimeLimit:       conf.StatementEvents.TimeLimit,
-	}
+	}, nil
 }
 
 func (c *mySQLClient) Connect() error {
@@ -203,34 +236,63 @@ func (c *mySQLClient) Connect() error {
 }
 
 // getVersion queries the db for the version.
-func (c *mySQLClient) getVersion() (string, error) {
+func (c *mySQLClient) getVersion() (*version.Version, error) {
 	query := "SELECT VERSION();"
-	var version string
-	err := c.client.QueryRow(query).Scan(&version)
+	var versionStr string
+	err := c.client.QueryRow(query).Scan(&versionStr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	return version, nil
+	version, err := version.NewVersion(versionStr)
+	return version, err
 }
 
 // getGlobalStats queries the db for global status metrics.
 func (c *mySQLClient) getGlobalStats() (map[string]string, error) {
-	query := "SHOW GLOBAL STATUS;"
-	return Query(*c, query)
+	q := "SHOW GLOBAL STATUS;"
+	return query(*c, q)
 }
 
 // getInnodbStats queries the db for innodb metrics.
 func (c *mySQLClient) getInnodbStats() (map[string]string, error) {
-	query := "SELECT name, count FROM information_schema.innodb_metrics WHERE name LIKE '%buffer_pool_size%';"
-	return Query(*c, query)
+	q := "SELECT name, count FROM information_schema.innodb_metrics WHERE name LIKE '%buffer_pool_size%';"
+	return query(*c, q)
+}
+
+// getTableStats queries the db for information_schema table size metrics.
+func (c *mySQLClient) getTableStats() ([]TableStats, error) {
+	query := "SELECT TABLE_SCHEMA, TABLE_NAME, " +
+		"COALESCE(TABLE_ROWS, 0) as TABLE_ROWS, " +
+		"COALESCE(AVG_ROW_LENGTH, 0) as AVG_ROW_LENGTH, " +
+		"COALESCE(DATA_LENGTH, 0) as DATA_LENGTH, " +
+		"COALESCE(INDEX_LENGTH, 0) as  INDEX_LENGTH " +
+		"FROM information_schema.TABLES " +
+		"WHERE TABLE_SCHEMA NOT in ('information_schema', 'sys');"
+	rows, err := c.client.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var stats []TableStats
+	for rows.Next() {
+		var s TableStats
+		err := rows.Scan(&s.schema, &s.name,
+			&s.rows, &s.averageRowLength,
+			&s.dataLength, &s.indexLength)
+		if err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+
+	return stats, nil
 }
 
 // getTableIoWaitsStats queries the db for table_io_waits metrics.
 func (c *mySQLClient) getTableIoWaitsStats() ([]TableIoWaitsStats, error) {
 	query := "SELECT OBJECT_SCHEMA, OBJECT_NAME, " +
 		"COUNT_DELETE, COUNT_FETCH, COUNT_INSERT, COUNT_UPDATE," +
-		"SUM_TIMER_DELETE, SUM_TIMER_FETCH, SUM_TIMER_INSERT, SUM_TIMER_UPDATE " +
+		"SUM_TIMER_DELETE/1000, SUM_TIMER_FETCH/1000, SUM_TIMER_INSERT/1000, SUM_TIMER_UPDATE/1000 " +
 		"FROM performance_schema.table_io_waits_summary_by_table " +
 		"WHERE OBJECT_SCHEMA NOT IN ('mysql', 'performance_schema');"
 	rows, err := c.client.Query(query)
@@ -257,7 +319,7 @@ func (c *mySQLClient) getTableIoWaitsStats() ([]TableIoWaitsStats, error) {
 func (c *mySQLClient) getIndexIoWaitsStats() ([]IndexIoWaitsStats, error) {
 	query := "SELECT OBJECT_SCHEMA, OBJECT_NAME, ifnull(INDEX_NAME, 'NONE') as INDEX_NAME," +
 		"COUNT_FETCH, COUNT_INSERT, COUNT_UPDATE, COUNT_DELETE," +
-		"SUM_TIMER_FETCH, SUM_TIMER_INSERT, SUM_TIMER_UPDATE, SUM_TIMER_DELETE " +
+		"SUM_TIMER_FETCH/1000, SUM_TIMER_INSERT/1000, SUM_TIMER_UPDATE/1000, SUM_TIMER_DELETE/1000 " +
 		"FROM performance_schema.table_io_waits_summary_by_index_usage " +
 		"WHERE OBJECT_SCHEMA NOT IN ('mysql', 'performance_schema');"
 
@@ -283,7 +345,7 @@ func (c *mySQLClient) getIndexIoWaitsStats() ([]IndexIoWaitsStats, error) {
 
 func (c *mySQLClient) getStatementEventsStats() ([]StatementEventStats, error) {
 	query := fmt.Sprintf("SELECT ifnull(SCHEMA_NAME, 'NONE') as SCHEMA_NAME, DIGEST,"+
-		"LEFT(DIGEST_TEXT, %d) as DIGEST_TEXT, SUM_TIMER_WAIT, SUM_ERRORS,"+
+		"LEFT(DIGEST_TEXT, %d) as DIGEST_TEXT, SUM_TIMER_WAIT/1000, SUM_ERRORS,"+
 		"SUM_WARNINGS, SUM_ROWS_AFFECTED, SUM_ROWS_SENT, SUM_ROWS_EXAMINED,"+
 		"SUM_CREATED_TMP_DISK_TABLES, SUM_CREATED_TMP_TABLES, SUM_SORT_MERGE_PASSES,"+
 		"SUM_SORT_ROWS, SUM_NO_INDEX_USED "+
@@ -322,10 +384,10 @@ func (c *mySQLClient) getTableLockWaitEventStats() ([]tableLockWaitEventStats, e
 	query := "SELECT OBJECT_SCHEMA, OBJECT_NAME, COUNT_READ_NORMAL, COUNT_READ_WITH_SHARED_LOCKS," +
 		"COUNT_READ_HIGH_PRIORITY, COUNT_READ_NO_INSERT, COUNT_READ_EXTERNAL, COUNT_WRITE_ALLOW_WRITE," +
 		"COUNT_WRITE_CONCURRENT_INSERT, COUNT_WRITE_LOW_PRIORITY, COUNT_WRITE_NORMAL," +
-		"COUNT_WRITE_EXTERNAL, SUM_TIMER_READ_NORMAL, SUM_TIMER_READ_WITH_SHARED_LOCKS," +
-		"SUM_TIMER_READ_HIGH_PRIORITY, SUM_TIMER_READ_NO_INSERT, SUM_TIMER_READ_EXTERNAL," +
-		"SUM_TIMER_WRITE_ALLOW_WRITE, SUM_TIMER_WRITE_CONCURRENT_INSERT, SUM_TIMER_WRITE_LOW_PRIORITY," +
-		"SUM_TIMER_WRITE_NORMAL, SUM_TIMER_WRITE_EXTERNAL " +
+		"COUNT_WRITE_EXTERNAL, SUM_TIMER_READ_NORMAL/1000, SUM_TIMER_READ_WITH_SHARED_LOCKS/1000," +
+		"SUM_TIMER_READ_HIGH_PRIORITY/1000, SUM_TIMER_READ_NO_INSERT/1000, SUM_TIMER_READ_EXTERNAL/1000," +
+		"SUM_TIMER_WRITE_ALLOW_WRITE/1000, SUM_TIMER_WRITE_CONCURRENT_INSERT/1000, SUM_TIMER_WRITE_LOW_PRIORITY/1000," +
+		"SUM_TIMER_WRITE_NORMAL/1000, SUM_TIMER_WRITE_EXTERNAL/1000 " +
 		"FROM performance_schema.table_lock_waits_summary_by_table " +
 		"WHERE OBJECT_SCHEMA NOT IN ('mysql', 'performance_schema', 'information_schema')"
 
@@ -353,18 +415,20 @@ func (c *mySQLClient) getTableLockWaitEventStats() ([]tableLockWaitEventStats, e
 }
 
 func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
-	version, err := c.getVersion()
+	mysqlVersion, err := c.getVersion()
 	if err != nil {
 		return nil, err
 	}
 
-	if version < "8.0.22" {
-		return nil, nil
+	query := "SHOW REPLICA STATUS"
+	minMysqlVersion, _ := version.NewVersion("8.0.22")
+	if strings.Contains(mysqlVersion.String(), "MariaDB") {
+		query = "SHOW SLAVE STATUS"
+	} else if mysqlVersion.LessThan(minMysqlVersion) {
+		query = "SHOW SLAVE STATUS"
 	}
 
-	query := "SHOW REPLICA STATUS"
 	rows, err := c.client.Query(query)
-
 	if err != nil {
 		return nil, err
 	}
@@ -378,22 +442,34 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 	var stats []ReplicaStatusStats
 	for rows.Next() {
 		var s ReplicaStatusStats
-		dest := []interface{}{}
+		dest := []any{}
 		for _, col := range cols {
 			switch strings.ToLower(col) {
 			case "replica_io_state":
 				dest = append(dest, &s.replicaIOState)
+			case "slave_io_state":
+				dest = append(dest, &s.replicaIOState)
 			case "source_host":
+				dest = append(dest, &s.sourceHost)
+			case "master_host":
 				dest = append(dest, &s.sourceHost)
 			case "source_user":
 				dest = append(dest, &s.sourceUser)
+			case "master_user":
+				dest = append(dest, &s.sourceUser)
 			case "source_port":
+				dest = append(dest, &s.sourcePort)
+			case "master_port":
 				dest = append(dest, &s.sourcePort)
 			case "connect_retry":
 				dest = append(dest, &s.connectRetry)
 			case "source_log_file":
 				dest = append(dest, &s.sourceLogFile)
+			case "master_log_file":
+				dest = append(dest, &s.sourceLogFile)
 			case "read_source_log_pos":
+				dest = append(dest, &s.readSourceLogPos)
+			case "read_master_log_pos":
 				dest = append(dest, &s.readSourceLogPos)
 			case "relay_log_file":
 				dest = append(dest, &s.relayLogFile)
@@ -401,9 +477,15 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 				dest = append(dest, &s.relayLogPos)
 			case "relay_source_log_file":
 				dest = append(dest, &s.relaySourceLogFile)
+			case "relay_master_log_file":
+				dest = append(dest, &s.relaySourceLogFile)
 			case "replica_io_running":
 				dest = append(dest, &s.replicaIORunning)
+			case "slave_io_running":
+				dest = append(dest, &s.replicaIORunning)
 			case "replica_sql_running":
+				dest = append(dest, &s.replicaSQLRunning)
+			case "slave_sql_running":
 				dest = append(dest, &s.replicaSQLRunning)
 			case "replicate_do_db":
 				dest = append(dest, &s.replicateDoDB)
@@ -425,6 +507,8 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 				dest = append(dest, &s.skipCounter)
 			case "exec_source_log_pos":
 				dest = append(dest, &s.execSourceLogPos)
+			case "exec_master_log_pos":
+				dest = append(dest, &s.execSourceLogPos)
 			case "relay_log_space":
 				dest = append(dest, &s.relayLogSpace)
 			case "until_condition":
@@ -435,19 +519,35 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 				dest = append(dest, &s.untilLogPos)
 			case "source_ssl_allowed":
 				dest = append(dest, &s.sourceSSLAllowed)
+			case "master_ssl_allowed":
+				dest = append(dest, &s.sourceSSLAllowed)
 			case "source_ssl_ca_file":
+				dest = append(dest, &s.sourceSSLCAFile)
+			case "master_ssl_ca_file":
 				dest = append(dest, &s.sourceSSLCAFile)
 			case "source_ssl_ca_path":
 				dest = append(dest, &s.sourceSSLCAPath)
+			case "master_ssl_ca_path":
+				dest = append(dest, &s.sourceSSLCAPath)
 			case "source_ssl_cert":
+				dest = append(dest, &s.sourceSSLCert)
+			case "master_ssl_cert":
 				dest = append(dest, &s.sourceSSLCert)
 			case "source_ssl_cipher":
 				dest = append(dest, &s.sourceSSLCipher)
+			case "master_ssl_cipher":
+				dest = append(dest, &s.sourceSSLCipher)
 			case "source_ssl_key":
+				dest = append(dest, &s.sourceSSLKey)
+			case "master_ssl_key":
 				dest = append(dest, &s.sourceSSLKey)
 			case "seconds_behind_source":
 				dest = append(dest, &s.secondsBehindSource)
+			case "seconds_behind_master":
+				dest = append(dest, &s.secondsBehindSource)
 			case "source_ssl_verify_server_cert":
+				dest = append(dest, &s.sourceSSLVerifyServerCert)
+			case "master_ssl_verify_server_cert":
 				dest = append(dest, &s.sourceSSLVerifyServerCert)
 			case "last_io_errno":
 				dest = append(dest, &s.lastIOErrno)
@@ -458,12 +558,18 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 			case "last_sql_error":
 				dest = append(dest, &s.lastSQLError)
 			case "replicate_ignore_server_ids":
-				dest = append(dest, &s.replicateIgnoreServerIds)
+				dest = append(dest, &s.replicateIgnoreServerIDs)
 			case "source_server_id":
+				dest = append(dest, &s.sourceServerID)
+			case "master_server_id":
 				dest = append(dest, &s.sourceServerID)
 			case "source_uuid":
 				dest = append(dest, &s.sourceUUID)
+			case "master_uuid":
+				dest = append(dest, &s.sourceUUID)
 			case "source_info_file":
+				dest = append(dest, &s.sourceInfoFile)
+			case "master_info_file":
 				dest = append(dest, &s.sourceInfoFile)
 			case "sql_delay":
 				dest = append(dest, &s.sqlDelay)
@@ -471,9 +577,15 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 				dest = append(dest, &s.sqlRemainingDelay)
 			case "replica_sql_running_state":
 				dest = append(dest, &s.replicaSQLRunningState)
+			case "slave_sql_running_state":
+				dest = append(dest, &s.replicaSQLRunningState)
 			case "source_retry_count":
 				dest = append(dest, &s.sourceRetryCount)
+			case "master_retry_count":
+				dest = append(dest, &s.sourceRetryCount)
 			case "source_bind":
+				dest = append(dest, &s.sourceBind)
+			case "master_bind":
 				dest = append(dest, &s.sourceBind)
 			case "last_io_error_timestamp":
 				dest = append(dest, &s.lastIOErrorTimestamp)
@@ -481,7 +593,11 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 				dest = append(dest, &s.lastSQLErrorTimestamp)
 			case "source_ssl_crl":
 				dest = append(dest, &s.sourceSSLCrl)
+			case "master_ssl_crl":
+				dest = append(dest, &s.sourceSSLCrl)
 			case "source_ssl_crlpath":
+				dest = append(dest, &s.sourceSSLCrlpath)
+			case "master_ssl_crlpath":
 				dest = append(dest, &s.sourceSSLCrlpath)
 			case "retrieved_gtid_set":
 				dest = append(dest, &s.retrievedGtidSet)
@@ -495,18 +611,57 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 				dest = append(dest, &s.channelName)
 			case "source_tls_version":
 				dest = append(dest, &s.sourceTLSVersion)
+			case "master_tls_version":
+				dest = append(dest, &s.sourceTLSVersion)
 			case "source_public_key_path":
+				dest = append(dest, &s.sourcePublicKeyPath)
+			case "master_public_key_path":
 				dest = append(dest, &s.sourcePublicKeyPath)
 			case "get_source_public_key":
 				dest = append(dest, &s.getSourcePublicKey)
+			case "get_master_public_key":
+				dest = append(dest, &s.getSourcePublicKey)
 			case "network_namespace":
 				dest = append(dest, &s.networkNamespace)
+			case "using_gtid":
+				dest = append(dest, &s.usingGtid)
+			case "gtid_io_pos":
+				dest = append(dest, &s.gtidIoPos)
+			case "slave_ddl_groups":
+				dest = append(dest, &s.slaveDdlGroups)
+			case "slave_non_transactional_groups":
+				dest = append(dest, &s.slaveNonTransactionalGroups)
+			case "slave_transactional_groups":
+				dest = append(dest, &s.slaveTransactionalGroups)
+			case "retried_transactions":
+				dest = append(dest, &s.retriedTransactions)
+			case "max_relay_log_size":
+				dest = append(dest, &s.maxRelayLogSize)
+			case "executed_log_entries":
+				dest = append(dest, &s.executedLogEntries)
+			case "slave_received_heartbeats":
+				dest = append(dest, &s.slaveReceivedHeartbeats)
+			case "slave_heartbeat_period":
+				dest = append(dest, &s.slaveHeartbeatPeriod)
+			case "gtid_slave_pos":
+				dest = append(dest, &s.gtidSlavePos)
+			case "master_last_event_time":
+				dest = append(dest, &s.masterLastEventTime)
+			case "slave_last_event_time":
+				dest = append(dest, &s.slaveLastEventTime)
+			case "master_slave_time_diff":
+				dest = append(dest, &s.masterSlaveTimeDiff)
+			case "parallel_mode":
+				dest = append(dest, &s.parallelMode)
+			case "replicate_do_domain_ids":
+				dest = append(dest, &s.replicateDoDomainIDs)
+			case "replicate_ignore_domain_ids":
+				dest = append(dest, &s.replicateIgnoreDomainIDs)
 			default:
 				return nil, fmt.Errorf("unknown column name %s for replica status", col)
 			}
 		}
 		err := rows.Scan(dest...)
-
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +671,7 @@ func (c *mySQLClient) getReplicaStatusStats() ([]ReplicaStatusStats, error) {
 	return stats, nil
 }
 
-func Query(c mySQLClient, query string) (map[string]string, error) {
+func query(c mySQLClient, query string) (map[string]string, error) {
 	rows, err := c.client.Query(query)
 	if err != nil {
 		return nil, err

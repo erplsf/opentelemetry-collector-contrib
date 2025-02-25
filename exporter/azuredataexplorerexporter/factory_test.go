@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package azuredataexplorerexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/azuredataexplorerexporter"
 
@@ -30,22 +19,24 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/azuredataexplorerexporter/internal/metadata"
 )
 
 // Given a new factory and no-op exporter , the NewMetric exporter should work.
 // We could add additional failing tests if the config is wrong (using Validate) , but that is already done on config
-func TestCreateMetricsExporter(t *testing.T) {
+func TestCreateMetrics(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
-	exporter, err := factory.CreateMetricsExporter(context.Background(), params, cfg)
+	params := exportertest.NewNopSettings(metadata.Type)
+	exporter, err := factory.CreateMetrics(context.Background(), params, cfg)
 	assert.NotNil(t, exporter)
 	assert.NoError(t, err)
 
@@ -59,24 +50,24 @@ func TestCreateMetricsExporter(t *testing.T) {
 	dp.SetDoubleValue(42.42)
 	err = exporter.ConsumeMetrics(context.Background(), testMetrics)
 	assert.Error(t, err)
-	assert.Nil(t, exporter.Shutdown(context.Background()))
+	assert.NoError(t, exporter.Shutdown(context.Background()))
 }
 
 // Given a new factory and no-op exporter , the NewMetric exporter should work.
 // We could add additional failing tests if the config is wrong (using Validate) , but that is already done on config
-func TestCreateMetricsExporterWhenIngestEmpty(t *testing.T) {
+func TestCreateMetricsWhenIngestEmpty(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "2").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "2").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	// Load the #3 which has empty. This
-	assert.Panics(t, func() { _, _ = factory.CreateMetricsExporter(context.Background(), params, cfg) })
+	assert.Panics(t, func() { _, _ = factory.CreateMetrics(context.Background(), params, cfg) })
 }
 
 func TestCreateDefaultConfig(t *testing.T) {
@@ -89,18 +80,18 @@ func TestCreateDefaultConfig(t *testing.T) {
 
 // Given a new factory and no-op exporter , the LogExporter exporter should work.
 // We could add additional failing tests if the config is wrong (using Validate) , but that is already done on config
-func TestCreateLogsExporter(t *testing.T) {
+func TestCreateLogs(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
-	exporter, err := factory.CreateLogsExporter(context.Background(), params, cfg)
+	params := exportertest.NewNopSettings(metadata.Type)
+	exporter, err := factory.CreateLogs(context.Background(), params, cfg)
 	// Load the #3 which has empty. This
 	assert.NotNil(t, exporter)
 	assert.NoError(t, err)
@@ -114,41 +105,41 @@ func TestCreateLogsExporter(t *testing.T) {
 	// This will fail with auth failure
 	err = exporter.ConsumeLogs(context.Background(), testLogs)
 	assert.Error(t, err)
-	assert.Nil(t, exporter.Shutdown(context.Background()))
+	assert.NoError(t, exporter.Shutdown(context.Background()))
 }
 
 // Given a new factory and no-op exporter , the NewLogs exporter should work.
 // We could add additional failing tests if the config is wrong (using Validate) , but that is already done on config
-func TestCreateLogsExporterWhenIngestEmpty(t *testing.T) {
+func TestCreateLogsWhenIngestEmpty(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "2").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "2").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	// Load the #3 which has empty
-	// exporter, err := factory.CreateLogsExporter(context.Background(), params, cfg)
-	assert.Panics(t, func() { _, _ = factory.CreateLogsExporter(context.Background(), params, cfg) })
+	// exporter, err := factory.CreateLogs(context.Background(), params, cfg)
+	assert.Panics(t, func() { _, _ = factory.CreateLogs(context.Background(), params, cfg) })
 }
 
 // Given a new factory and no-op exporter , the LogExporter exporter should work.
 // We could add additional failing tests if the config is wrong (using Validate) , but that is already done on config
-func TestCreateTracesExporter(t *testing.T) {
+func TestCreateTraces(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
-	exporter, err := factory.CreateTracesExporter(context.Background(), params, cfg)
+	params := exportertest.NewNopSettings(metadata.Type)
+	exporter, err := factory.CreateTraces(context.Background(), params, cfg)
 	assert.NotNil(t, exporter)
 	assert.NoError(t, err)
 
@@ -159,22 +150,22 @@ func TestCreateTracesExporter(t *testing.T) {
 	ss.Spans().AppendEmpty()
 	err = exporter.ConsumeTraces(context.Background(), testTraces)
 	assert.Error(t, err)
-	assert.Nil(t, exporter.Shutdown(context.Background()))
+	assert.NoError(t, exporter.Shutdown(context.Background()))
 }
 
 // Given a new factory and no-op exporter , the NewLogs exporter should work.
 // We could add additional failing tests if the config is wrong (using Validate) , but that is already done on config
-func TestCreateTracesExporterWhenIngestEmpty(t *testing.T) {
+func TestCreateTracesWhenIngestEmpty(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "2").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "2").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	// Load the #3 which has empty
-	assert.Panics(t, func() { _, _ = factory.CreateTracesExporter(context.Background(), params, cfg) })
+	assert.Panics(t, func() { _, _ = factory.CreateTraces(context.Background(), params, cfg) })
 }

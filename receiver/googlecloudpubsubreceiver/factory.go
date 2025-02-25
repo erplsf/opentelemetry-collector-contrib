@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package googlecloudpubsubreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/googlecloudpubsubreceiver"
 
@@ -20,13 +9,13 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/obsreport"
 	"go.opentelemetry.io/collector/receiver"
+	"go.opentelemetry.io/collector/receiver/receiverhelper"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/googlecloudpubsubreceiver/internal/metadata"
 )
 
 const (
-	typeStr              = "googlecloudpubsub"
-	stability            = component.StabilityLevelBeta
 	reportTransport      = "pubsub"
 	reportFormatProtobuf = "protobuf"
 )
@@ -36,11 +25,11 @@ func NewFactory() receiver.Factory {
 		receivers: make(map[*Config]*pubsubReceiver),
 	}
 	return receiver.NewFactory(
-		typeStr,
+		metadata.Type,
 		f.CreateDefaultConfig,
-		receiver.WithTraces(f.CreateTracesReceiver, stability),
-		receiver.WithMetrics(f.CreateMetricsReceiver, stability),
-		receiver.WithLogs(f.CreateLogsReceiver, stability),
+		receiver.WithTraces(f.CreateTraces, metadata.TracesStability),
+		receiver.WithMetrics(f.CreateMetrics, metadata.MetricsStability),
+		receiver.WithLogs(f.CreateLogs, metadata.LogsStability),
 	)
 }
 
@@ -52,40 +41,37 @@ func (factory *pubsubReceiverFactory) CreateDefaultConfig() component.Config {
 	return &Config{}
 }
 
-func (factory *pubsubReceiverFactory) ensureReceiver(params receiver.CreateSettings, config component.Config) (*pubsubReceiver, error) {
+func (factory *pubsubReceiverFactory) ensureReceiver(settings receiver.Settings, config component.Config) (*pubsubReceiver, error) {
 	receiver := factory.receivers[config.(*Config)]
 	if receiver != nil {
 		return receiver, nil
 	}
 	rconfig := config.(*Config)
-	obsrecv, err := obsreport.NewReceiver(obsreport.ReceiverSettings{
-		ReceiverID:             params.ID,
+	obsrecv, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
+		ReceiverID:             settings.ID,
 		Transport:              reportTransport,
-		ReceiverCreateSettings: params,
+		ReceiverCreateSettings: settings,
 	})
 	if err != nil {
 		return nil, err
 	}
 	receiver = &pubsubReceiver{
-		logger:    params.Logger,
+		settings:  settings,
 		obsrecv:   obsrecv,
-		userAgent: strings.ReplaceAll(rconfig.UserAgent, "{{version}}", params.BuildInfo.Version),
+		userAgent: strings.ReplaceAll(rconfig.UserAgent, "{{version}}", settings.BuildInfo.Version),
 		config:    rconfig,
 	}
 	factory.receivers[config.(*Config)] = receiver
 	return receiver, nil
 }
 
-func (factory *pubsubReceiverFactory) CreateTracesReceiver(
+func (factory *pubsubReceiverFactory) CreateTraces(
 	_ context.Context,
-	params receiver.CreateSettings,
+	params receiver.Settings,
 	cfg component.Config,
-	consumer consumer.Traces) (receiver.Traces, error) {
-
-	if consumer == nil {
-		return nil, component.ErrNilNextConsumer
-	}
-	err := cfg.(*Config).validateForTrace()
+	consumer consumer.Traces,
+) (receiver.Traces, error) {
+	err := cfg.(*Config).validate()
 	if err != nil {
 		return nil, err
 	}
@@ -97,16 +83,13 @@ func (factory *pubsubReceiverFactory) CreateTracesReceiver(
 	return receiver, nil
 }
 
-func (factory *pubsubReceiverFactory) CreateMetricsReceiver(
+func (factory *pubsubReceiverFactory) CreateMetrics(
 	_ context.Context,
-	params receiver.CreateSettings,
+	params receiver.Settings,
 	cfg component.Config,
-	consumer consumer.Metrics) (receiver.Metrics, error) {
-
-	if consumer == nil {
-		return nil, component.ErrNilNextConsumer
-	}
-	err := cfg.(*Config).validateForMetric()
+	consumer consumer.Metrics,
+) (receiver.Metrics, error) {
+	err := cfg.(*Config).validate()
 	if err != nil {
 		return nil, err
 	}
@@ -118,16 +101,13 @@ func (factory *pubsubReceiverFactory) CreateMetricsReceiver(
 	return receiver, nil
 }
 
-func (factory *pubsubReceiverFactory) CreateLogsReceiver(
+func (factory *pubsubReceiverFactory) CreateLogs(
 	_ context.Context,
-	params receiver.CreateSettings,
+	params receiver.Settings,
 	cfg component.Config,
-	consumer consumer.Logs) (receiver.Logs, error) {
-
-	if consumer == nil {
-		return nil, component.ErrNilNextConsumer
-	}
-	err := cfg.(*Config).validateForLog()
+	consumer consumer.Logs,
+) (receiver.Logs, error) {
+	err := cfg.(*Config).validate()
 	if err != nil {
 		return nil, err
 	}

@@ -1,76 +1,57 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package internal // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/internal"
 
 import (
 	"context"
-	"fmt"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/internal/ottlcommon"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/internal/ctxcache"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/internal/ctxerror"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/internal/ctxscope"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/internal/ctxutil"
 )
 
 type InstrumentationScopeContext interface {
 	GetInstrumentationScope() pcommon.InstrumentationScope
+	GetScopeSchemaURLItem() SchemaURLItem
 }
 
-func ScopePathGetSetter[K InstrumentationScopeContext](path []ottl.Field) (ottl.GetSetter[K], error) {
-	if len(path) == 0 {
-		return accessInstrumentationScope[K](), nil
+func ScopePathGetSetter[K InstrumentationScopeContext](lowerContext string, path ottl.Path[K]) (ottl.GetSetter[K], error) {
+	if path == nil {
+		return nil, ctxerror.New("nil", "nil", ctxscope.Name, ctxscope.DocRef)
 	}
-
-	switch path[0].Name {
+	switch path.Name() {
 	case "name":
 		return accessInstrumentationScopeName[K](), nil
 	case "version":
 		return accessInstrumentationScopeVersion[K](), nil
 	case "attributes":
-		mapKey := path[0].MapKey
-		if mapKey == nil {
+		mapKeys := path.Keys()
+		if mapKeys == nil {
 			return accessInstrumentationScopeAttributes[K](), nil
 		}
-		return accessInstrumentationScopeAttributesKey[K](mapKey), nil
+		return accessInstrumentationScopeAttributesKey[K](mapKeys), nil
 	case "dropped_attributes_count":
 		return accessInstrumentationScopeDroppedAttributesCount[K](), nil
-	}
-
-	return nil, fmt.Errorf("invalid scope path expression %v", path)
-}
-
-func accessInstrumentationScope[K InstrumentationScopeContext]() ottl.StandardGetSetter[K] {
-	return ottl.StandardGetSetter[K]{
-		Getter: func(ctx context.Context, tCtx K) (interface{}, error) {
-			return tCtx.GetInstrumentationScope(), nil
-		},
-		Setter: func(ctx context.Context, tCtx K, val interface{}) error {
-			if newIl, ok := val.(pcommon.InstrumentationScope); ok {
-				newIl.CopyTo(tCtx.GetInstrumentationScope())
-			}
-			return nil
-		},
+	case "schema_url":
+		return accessInstrumentationScopeSchemaURLItem[K](), nil
+	case "cache":
+		return nil, ctxcache.NewError(lowerContext, path.Context(), path.String())
+	default:
+		return nil, ctxerror.New(path.Name(), path.String(), ctxscope.Name, ctxscope.DocRef)
 	}
 }
 
 func accessInstrumentationScopeAttributes[K InstrumentationScopeContext]() ottl.StandardGetSetter[K] {
 	return ottl.StandardGetSetter[K]{
-		Getter: func(ctx context.Context, tCtx K) (interface{}, error) {
+		Getter: func(_ context.Context, tCtx K) (any, error) {
 			return tCtx.GetInstrumentationScope().Attributes(), nil
 		},
-		Setter: func(ctx context.Context, tCtx K, val interface{}) error {
+		Setter: func(_ context.Context, tCtx K, val any) error {
 			if attrs, ok := val.(pcommon.Map); ok {
 				attrs.CopyTo(tCtx.GetInstrumentationScope().Attributes())
 			}
@@ -79,24 +60,23 @@ func accessInstrumentationScopeAttributes[K InstrumentationScopeContext]() ottl.
 	}
 }
 
-func accessInstrumentationScopeAttributesKey[K InstrumentationScopeContext](mapKey *string) ottl.StandardGetSetter[K] {
+func accessInstrumentationScopeAttributesKey[K InstrumentationScopeContext](keys []ottl.Key[K]) ottl.StandardGetSetter[K] {
 	return ottl.StandardGetSetter[K]{
-		Getter: func(ctx context.Context, tCtx K) (interface{}, error) {
-			return ottlcommon.GetMapValue(tCtx.GetInstrumentationScope().Attributes(), *mapKey), nil
+		Getter: func(ctx context.Context, tCtx K) (any, error) {
+			return ctxutil.GetMapValue[K](ctx, tCtx, tCtx.GetInstrumentationScope().Attributes(), keys)
 		},
-		Setter: func(ctx context.Context, tCtx K, val interface{}) error {
-			ottlcommon.SetMapValue(tCtx.GetInstrumentationScope().Attributes(), *mapKey, val)
-			return nil
+		Setter: func(ctx context.Context, tCtx K, val any) error {
+			return ctxutil.SetMapValue[K](ctx, tCtx, tCtx.GetInstrumentationScope().Attributes(), keys, val)
 		},
 	}
 }
 
 func accessInstrumentationScopeName[K InstrumentationScopeContext]() ottl.StandardGetSetter[K] {
 	return ottl.StandardGetSetter[K]{
-		Getter: func(ctx context.Context, tCtx K) (interface{}, error) {
+		Getter: func(_ context.Context, tCtx K) (any, error) {
 			return tCtx.GetInstrumentationScope().Name(), nil
 		},
-		Setter: func(ctx context.Context, tCtx K, val interface{}) error {
+		Setter: func(_ context.Context, tCtx K, val any) error {
 			if str, ok := val.(string); ok {
 				tCtx.GetInstrumentationScope().SetName(str)
 			}
@@ -107,10 +87,10 @@ func accessInstrumentationScopeName[K InstrumentationScopeContext]() ottl.Standa
 
 func accessInstrumentationScopeVersion[K InstrumentationScopeContext]() ottl.StandardGetSetter[K] {
 	return ottl.StandardGetSetter[K]{
-		Getter: func(ctx context.Context, tCtx K) (interface{}, error) {
+		Getter: func(_ context.Context, tCtx K) (any, error) {
 			return tCtx.GetInstrumentationScope().Version(), nil
 		},
-		Setter: func(ctx context.Context, tCtx K, val interface{}) error {
+		Setter: func(_ context.Context, tCtx K, val any) error {
 			if str, ok := val.(string); ok {
 				tCtx.GetInstrumentationScope().SetVersion(str)
 			}
@@ -121,12 +101,26 @@ func accessInstrumentationScopeVersion[K InstrumentationScopeContext]() ottl.Sta
 
 func accessInstrumentationScopeDroppedAttributesCount[K InstrumentationScopeContext]() ottl.StandardGetSetter[K] {
 	return ottl.StandardGetSetter[K]{
-		Getter: func(ctx context.Context, tCtx K) (interface{}, error) {
+		Getter: func(_ context.Context, tCtx K) (any, error) {
 			return int64(tCtx.GetInstrumentationScope().DroppedAttributesCount()), nil
 		},
-		Setter: func(ctx context.Context, tCtx K, val interface{}) error {
+		Setter: func(_ context.Context, tCtx K, val any) error {
 			if i, ok := val.(int64); ok {
 				tCtx.GetInstrumentationScope().SetDroppedAttributesCount(uint32(i))
+			}
+			return nil
+		},
+	}
+}
+
+func accessInstrumentationScopeSchemaURLItem[K InstrumentationScopeContext]() ottl.StandardGetSetter[K] {
+	return ottl.StandardGetSetter[K]{
+		Getter: func(_ context.Context, tCtx K) (any, error) {
+			return tCtx.GetScopeSchemaURLItem().SchemaUrl(), nil
+		},
+		Setter: func(_ context.Context, tCtx K, val any) error {
+			if schemaURL, ok := val.(string); ok {
+				tCtx.GetScopeSchemaURLItem().SetSchemaUrl(schemaURL)
 			}
 			return nil
 		},

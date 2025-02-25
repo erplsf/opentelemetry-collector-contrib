@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package pulsarreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/pulsarreceiver"
 
@@ -20,14 +9,14 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/pulsarreceiver/internal/metadata"
 )
 
 const (
-	typeStr             = "pulsar"
-	stability           = component.StabilityLevelAlpha
 	defaultEncoding     = "otlp_proto"
 	defaultTraceTopic   = "otlp_spans"
-	defaultMeticsTopic  = "otlp_metrics"
+	defaultMetricsTopic = "otlp_metrics"
 	defaultLogsTopic    = "otlp_logs"
 	defaultConsumerName = ""
 	defaultSubscription = "otlp_subscription"
@@ -37,8 +26,8 @@ const (
 // FactoryOption applies changes to PulsarExporterFactory.
 type FactoryOption func(factory *pulsarReceiverFactory)
 
-// WithTracesUnmarshalers adds Unmarshalers.
-func WithTracesUnmarshalers(tracesUnmarshalers ...TracesUnmarshaler) FactoryOption {
+// withTracesUnmarshalers adds Unmarshalers.
+func withTracesUnmarshalers(tracesUnmarshalers ...TracesUnmarshaler) FactoryOption {
 	return func(factory *pulsarReceiverFactory) {
 		for _, unmarshaler := range tracesUnmarshalers {
 			factory.tracesUnmarshalers[unmarshaler.Encoding()] = unmarshaler
@@ -46,8 +35,8 @@ func WithTracesUnmarshalers(tracesUnmarshalers ...TracesUnmarshaler) FactoryOpti
 	}
 }
 
-// WithMetricsUnmarshalers adds MetricsUnmarshalers.
-func WithMetricsUnmarshalers(metricsUnmarshalers ...MetricsUnmarshaler) FactoryOption {
+// withMetricsUnmarshalers adds MetricsUnmarshalers.
+func withMetricsUnmarshalers(metricsUnmarshalers ...MetricsUnmarshaler) FactoryOption {
 	return func(factory *pulsarReceiverFactory) {
 		for _, unmarshaler := range metricsUnmarshalers {
 			factory.metricsUnmarshalers[unmarshaler.Encoding()] = unmarshaler
@@ -55,8 +44,8 @@ func WithMetricsUnmarshalers(metricsUnmarshalers ...MetricsUnmarshaler) FactoryO
 	}
 }
 
-// WithLogsUnmarshalers adds LogsUnmarshalers.
-func WithLogsUnmarshalers(logsUnmarshalers ...LogsUnmarshaler) FactoryOption {
+// withLogsUnmarshalers adds LogsUnmarshalers.
+func withLogsUnmarshalers(logsUnmarshalers ...LogsUnmarshaler) FactoryOption {
 	return func(factory *pulsarReceiverFactory) {
 		for _, unmarshaler := range logsUnmarshalers {
 			factory.logsUnmarshalers[unmarshaler.Encoding()] = unmarshaler
@@ -66,7 +55,6 @@ func WithLogsUnmarshalers(logsUnmarshalers ...LogsUnmarshaler) FactoryOption {
 
 // NewFactory creates Pulsar receiver factory.
 func NewFactory(options ...FactoryOption) receiver.Factory {
-
 	f := &pulsarReceiverFactory{
 		tracesUnmarshalers:  defaultTracesUnmarshalers(),
 		metricsUnmarshalers: defaultMetricsUnmarshalers(),
@@ -76,11 +64,11 @@ func NewFactory(options ...FactoryOption) receiver.Factory {
 		o(f)
 	}
 	return receiver.NewFactory(
-		typeStr,
+		metadata.Type,
 		createDefaultConfig,
-		receiver.WithTraces(f.createTracesReceiver, stability),
-		receiver.WithMetrics(f.createMetricsReceiver, stability),
-		receiver.WithLogs(f.createLogsReceiver, stability),
+		receiver.WithTraces(f.createTracesReceiver, metadata.TracesStability),
+		receiver.WithMetrics(f.createMetricsReceiver, metadata.MetricsStability),
+		receiver.WithLogs(f.createLogsReceiver, metadata.LogsStability),
 	)
 }
 
@@ -92,7 +80,7 @@ type pulsarReceiverFactory struct {
 
 func (f *pulsarReceiverFactory) createTracesReceiver(
 	_ context.Context,
-	set receiver.CreateSettings,
+	set receiver.Settings,
 	cfg component.Config,
 	nextConsumer consumer.Traces,
 ) (receiver.Traces, error) {
@@ -109,13 +97,13 @@ func (f *pulsarReceiverFactory) createTracesReceiver(
 
 func (f *pulsarReceiverFactory) createMetricsReceiver(
 	_ context.Context,
-	set receiver.CreateSettings,
+	set receiver.Settings,
 	cfg component.Config,
 	nextConsumer consumer.Metrics,
 ) (receiver.Metrics, error) {
 	c := *(cfg.(*Config))
 	if len(c.Topic) == 0 {
-		c.Topic = defaultMeticsTopic
+		c.Topic = defaultMetricsTopic
 	}
 	r, err := newMetricsReceiver(c, set, f.metricsUnmarshalers, nextConsumer)
 	if err != nil {
@@ -126,7 +114,7 @@ func (f *pulsarReceiverFactory) createMetricsReceiver(
 
 func (f *pulsarReceiverFactory) createLogsReceiver(
 	_ context.Context,
-	set receiver.CreateSettings,
+	set receiver.Settings,
 	cfg component.Config,
 	nextConsumer consumer.Logs,
 ) (receiver.Logs, error) {

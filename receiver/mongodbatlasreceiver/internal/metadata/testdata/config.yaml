@@ -13,9 +13,13 @@ all_set:
       enabled: true
     mongodbatlas.disk.partition.latency.max:
       enabled: true
+    mongodbatlas.disk.partition.queue.depth:
+      enabled: true
     mongodbatlas.disk.partition.space.average:
       enabled: true
     mongodbatlas.disk.partition.space.max:
+      enabled: true
+    mongodbatlas.disk.partition.throughput:
       enabled: true
     mongodbatlas.disk.partition.usage.average:
       enabled: true
@@ -30,6 +34,8 @@ all_set:
     mongodbatlas.process.background_flush:
       enabled: true
     mongodbatlas.process.cache.io:
+      enabled: true
+    mongodbatlas.process.cache.ratio:
       enabled: true
     mongodbatlas.process.cache.size:
       enabled: true
@@ -64,8 +70,6 @@ all_set:
     mongodbatlas.process.db.query_targeting.scanned_per_returned:
       enabled: true
     mongodbatlas.process.db.storage:
-      enabled: true
-    mongodbatlas.process.fts.cpu.usage:
       enabled: true
     mongodbatlas.process.global_lock:
       enabled: true
@@ -128,6 +132,8 @@ all_set:
     mongodbatlas.system.paging.usage.max:
       enabled: true
   resource_attributes:
+    mongodb_atlas.cluster.name:
+      enabled: true
     mongodb_atlas.db.name:
       enabled: true
     mongodb_atlas.disk.partition:
@@ -145,6 +151,10 @@ all_set:
     mongodb_atlas.project.id:
       enabled: true
     mongodb_atlas.project.name:
+      enabled: true
+    mongodb_atlas.provider.name:
+      enabled: true
+    mongodb_atlas.region.name:
       enabled: true
     mongodb_atlas.user.alias:
       enabled: true
@@ -162,9 +172,13 @@ none_set:
       enabled: false
     mongodbatlas.disk.partition.latency.max:
       enabled: false
+    mongodbatlas.disk.partition.queue.depth:
+      enabled: false
     mongodbatlas.disk.partition.space.average:
       enabled: false
     mongodbatlas.disk.partition.space.max:
+      enabled: false
+    mongodbatlas.disk.partition.throughput:
       enabled: false
     mongodbatlas.disk.partition.usage.average:
       enabled: false
@@ -179,6 +193,8 @@ none_set:
     mongodbatlas.process.background_flush:
       enabled: false
     mongodbatlas.process.cache.io:
+      enabled: false
+    mongodbatlas.process.cache.ratio:
       enabled: false
     mongodbatlas.process.cache.size:
       enabled: false
@@ -213,8 +229,6 @@ none_set:
     mongodbatlas.process.db.query_targeting.scanned_per_returned:
       enabled: false
     mongodbatlas.process.db.storage:
-      enabled: false
-    mongodbatlas.process.fts.cpu.usage:
       enabled: false
     mongodbatlas.process.global_lock:
       enabled: false
@@ -277,6 +291,8 @@ none_set:
     mongodbatlas.system.paging.usage.max:
       enabled: false
   resource_attributes:
+    mongodb_atlas.cluster.name:
+      enabled: false
     mongodb_atlas.db.name:
       enabled: false
     mongodb_atlas.disk.partition:
@@ -295,5 +311,117 @@ none_set:
       enabled: false
     mongodb_atlas.project.name:
       enabled: false
+    mongodb_atlas.provider.name:
+      enabled: false
+    mongodb_atlas.region.name:
+      enabled: false
     mongodb_atlas.user.alias:
       enabled: false
+filter_set_include:
+  resource_attributes:
+    mongodb_atlas.cluster.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.db.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.disk.partition:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.host.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.org_name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.process.id:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.process.port:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.process.type_name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.project.id:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.project.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.provider.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.region.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    mongodb_atlas.user.alias:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+filter_set_exclude:
+  resource_attributes:
+    mongodb_atlas.cluster.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.cluster.name-val"
+    mongodb_atlas.db.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.db.name-val"
+    mongodb_atlas.disk.partition:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.disk.partition-val"
+    mongodb_atlas.host.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.host.name-val"
+    mongodb_atlas.org_name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.org_name-val"
+    mongodb_atlas.process.id:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.process.id-val"
+    mongodb_atlas.process.port:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.process.port-val"
+    mongodb_atlas.process.type_name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.process.type_name-val"
+    mongodb_atlas.project.id:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.project.id-val"
+    mongodb_atlas.project.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.project.name-val"
+    mongodb_atlas.provider.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.provider.name-val"
+    mongodb_atlas.region.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.region.name-val"
+    mongodb_atlas.user.alias:
+      enabled: true
+      metrics_exclude:
+        - strict: "mongodb_atlas.user.alias-val"

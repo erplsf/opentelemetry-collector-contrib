@@ -1,22 +1,12 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package mongodbatlasreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/mongodbatlasreceiver"
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -24,7 +14,7 @@ import (
 	"go.mongodb.org/atlas/mongodbatlas"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/extension/experimental/storage"
+	"go.opentelemetry.io/collector/extension/xextension/storage"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	rcvr "go.opentelemetry.io/collector/receiver"
@@ -45,6 +35,7 @@ type eventsClient interface {
 	GetProjectEvents(ctx context.Context, groupID string, opts *internal.GetEventsOptions) (ret []*mongodbatlas.Event, nextPage bool, err error)
 	GetOrganization(ctx context.Context, orgID string) (*mongodbatlas.Organization, error)
 	GetOrganizationEvents(ctx context.Context, orgID string, opts *internal.GetEventsOptions) (ret []*mongodbatlas.Event, nextPage bool, err error)
+	Shutdown() error
 }
 
 type eventsReceiver struct {
@@ -66,9 +57,9 @@ type eventRecord struct {
 	NextStartTime *time.Time `mapstructure:"next_start_time"`
 }
 
-func newEventsReceiver(settings rcvr.CreateSettings, c *Config, consumer consumer.Logs) *eventsReceiver {
+func newEventsReceiver(settings rcvr.Settings, c *Config, consumer consumer.Logs) *eventsReceiver {
 	r := &eventsReceiver{
-		client:        internal.NewMongoDBAtlasClient(c.PublicKey, c.PrivateKey, c.RetrySettings, settings.Logger),
+		client:        internal.NewMongoDBAtlasClient(c.PublicKey, string(c.PrivateKey), c.BackOffConfig, settings.Logger),
 		cfg:           c,
 		logger:        settings.Logger,
 		consumer:      consumer,
@@ -94,7 +85,7 @@ func newEventsReceiver(settings rcvr.CreateSettings, c *Config, consumer consume
 	return r
 }
 
-func (er *eventsReceiver) Start(ctx context.Context, host component.Host, storageClient storage.Client) error {
+func (er *eventsReceiver) Start(ctx context.Context, _ component.Host, storageClient storage.Client) error {
 	er.logger.Debug("Starting up events receiver")
 	cancelCtx, cancel := context.WithCancel(ctx)
 	er.cancel = cancel
@@ -108,7 +99,12 @@ func (er *eventsReceiver) Shutdown(ctx context.Context) error {
 	er.logger.Debug("Shutting down events receiver")
 	er.cancel()
 	er.wg.Wait()
-	return er.checkpoint(ctx)
+
+	var err []error
+	err = append(err, er.client.Shutdown())
+	err = append(err, er.checkpoint(ctx))
+
+	return errors.Join(err...)
 }
 
 func (er *eventsReceiver) startPolling(ctx context.Context) error {
@@ -243,7 +239,6 @@ func (er *eventsReceiver) transformOrgEvents(now pcommon.Timestamp, events []*mo
 
 func (er *eventsReceiver) transformEvents(now pcommon.Timestamp, events []*mongodbatlas.Event, resourceLogs *plog.ResourceLogs) {
 	for _, event := range events {
-
 		logRecord := resourceLogs.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
 		bodyBytes, err := json.Marshal(event)
 		if err != nil {

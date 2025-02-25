@@ -1,16 +1,5 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package ecsinfo // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awscontainerinsightreceiver/internal/ecsInfo"
 
@@ -40,10 +29,10 @@ func GetContainerInstanceIDFromArn(arn string) (containerInstanceID string, err 
 	// container-instance/47c0ab6e-2c2c-475e-9c30-b878fa7a8c3d or
 	// container-instance/cluster-name/47c0ab6e-2c2c-475e-9c30-b878fa7a8c3d
 	err = nil
-	if splitedList := strings.Split(arn, ":"); len(splitedList) >= 6 {
+	if splitList := strings.Split(arn, ":"); len(splitList) >= 6 {
 		// Further splitting tmpResult with "/", it could be splitted into either 2 or 3
 		// Characters of "cluster-name" is only allowed to be letters, numbers and hyphens
-		tmpResult := strings.Split(splitedList[5], "/")
+		tmpResult := strings.Split(splitList[5], "/")
 		if len(tmpResult) == 2 {
 			containerInstanceID = tmpResult[1]
 			return
@@ -54,7 +43,6 @@ func GetContainerInstanceIDFromArn(arn string) (containerInstanceID string, err 
 	}
 	err = errors.New("Can't get ecs container instance id from ContainerInstance arn: " + arn)
 	return
-
 }
 
 // Check the channel is closed or not.
@@ -102,14 +90,13 @@ func request(ctx context.Context, endpoint string, client doer) ([]byte, error) 
 	}
 
 	if len(body) == maxHTTPResponseLength {
-		return nil, fmt.Errorf("response from %s, execeeds the maximum length: %v", endpoint, maxHTTPResponseLength)
+		return nil, fmt.Errorf("response from %s, exceeds the maximum length: %v", endpoint, maxHTTPResponseLength)
 	}
 	return body, nil
-
 }
 
 func clientGet(ctx context.Context, url string, client doer) (resp *http.Response, err error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

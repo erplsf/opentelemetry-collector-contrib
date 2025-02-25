@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the License);
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an AS IS BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package snowflakereceiver
 
@@ -22,12 +11,13 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/pmetrictest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/snowflakereceiver/internal/metadata"
 )
 
 func TestScraper(t *testing.T) {
@@ -36,27 +26,27 @@ func TestScraper(t *testing.T) {
 	cfg.Username = "uname"
 	cfg.Password = "pwd"
 	cfg.Warehouse = "warehouse"
-	err := component.ValidateConfig(cfg)
+	err := xconfmap.Validate(cfg)
 	if err != nil {
-		t.Fatal("an error ocured when validating config", err)
+		t.Fatal("an error occurred when validating config", err)
 	}
 
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 	if err != nil {
-		t.Fatal("an error ocured when opening mock db", err)
+		t.Fatal("an error occurred when opening mock db", err)
 	}
 	defer db.Close()
 
-	mockDB := MockDB{mock}
+	mockDB := mockDB{mock}
 	mockDB.initMockDB()
 
-	scraper := newSnowflakeMetricsScraper(receivertest.NewNopCreateSettings(), cfg)
+	scraper := newSnowflakeMetricsScraper(receivertest.NewNopSettings(metadata.Type), cfg)
 
 	// by default our scraper does not start with a client. the client we use must contain
 	// the mock database
 	scraperClient := snowflakeClient{
 		client: db,
-		logger: receivertest.NewNopCreateSettings().Logger,
+		logger: receivertest.NewNopSettings(metadata.Type).Logger,
 	}
 	scraper.client = &scraperClient
 
@@ -78,19 +68,20 @@ func TestStart(t *testing.T) {
 	cfg.Username = "uname"
 	cfg.Password = "pwd"
 	cfg.Warehouse = "warehouse"
-	require.NoError(t, component.ValidateConfig(cfg))
+	require.NoError(t, xconfmap.Validate(cfg))
 
-	scraper := newSnowflakeMetricsScraper(receivertest.NewNopCreateSettings(), cfg)
+	scraper := newSnowflakeMetricsScraper(receivertest.NewNopSettings(metadata.Type), cfg)
 	err := scraper.start(context.Background(), componenttest.NewNopHost())
 	require.NoError(t, err, "Problem starting scraper")
+	require.NoError(t, scraper.shutdown(context.Background()))
 }
 
 // wrapper type for convenience
-type MockDB struct {
+type mockDB struct {
 	mock sqlmock.Sqlmock
 }
 
-func (m *MockDB) initMockDB() {
+func (m *mockDB) initMockDB() {
 	testDB := []struct {
 		query   string
 		columns []string
@@ -118,19 +109,23 @@ func (m *MockDB) initMockDB() {
 		},
 		{
 			query: dbMetricsQuery,
-			columns: []string{"schemaname", "execution_status", "error_message",
+			columns: []string{
+				"schemaname", "execution_status", "error_message",
 				"query_type", "wh_name", "db_name", "wh_size", "username",
 				"count_queryid", "queued_overload", "queued_repair", "queued_provision",
 				"total_elapsed", "execution_time", "comp_time", "bytes_scanned",
 				"bytes_written", "bytes_deleted", "bytes_spilled_local", "bytes_spilled_remote",
 				"percentage_cache", "partitions_scanned", "rows_unloaded", "rows_deleted",
-				"rows_updated", "rows_inserted", "rows_produced"},
-			params: []driver.Value{"a", "b", "c", "d", "e", "f", "g", "h", 1, 2.0, 3.0, 4.0, 5.0, 6.0,
-				7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0},
+				"rows_updated", "rows_inserted", "rows_produced",
+			},
+			params: []driver.Value{
+				"a", "b", "c", "d", "e", "f", "g", "h", 1, 2.0, 3.0, 4.0, 5.0, 6.0,
+				7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0,
+			},
 		},
 		{
 			query:   sessionMetricsQuery,
-			columns: []string{"username", "disctinct_id"},
+			columns: []string{"username", "distinct_id"},
 			params:  []driver.Value{"t", 3.0},
 		},
 		{

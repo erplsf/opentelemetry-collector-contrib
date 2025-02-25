@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package filterottl
 
@@ -25,6 +14,8 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottldatapoint"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottllog"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlmetric"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlresource"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlscope"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlspan"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlspanevent"
 )
@@ -53,7 +44,7 @@ func Test_NewBoolExprForSpan(t *testing.T) {
 		{
 			name: "With Converter",
 			conditions: []string{
-				`IsMatch("test", "pass") == true`,
+				`IsMatch("test", "pass")`,
 			},
 			expectedResult: false,
 		},
@@ -69,6 +60,17 @@ func Test_NewBoolExprForSpan(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
+}
+
+func Test_NewBoolExprForSpanWithOptions(t *testing.T) {
+	_, err := NewBoolExprForSpanWithOptions(
+		[]string{`span.name == "foo"`},
+		StandardSpanFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottlspan.Option{ottlspan.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
 }
 
 func Test_NewBoolExprForSpanEvent(t *testing.T) {
@@ -95,7 +97,7 @@ func Test_NewBoolExprForSpanEvent(t *testing.T) {
 		{
 			name: "With Converter",
 			conditions: []string{
-				`IsMatch("test", "pass") == true`,
+				`IsMatch("test", "pass")`,
 			},
 			expectedResult: false,
 		},
@@ -111,6 +113,17 @@ func Test_NewBoolExprForSpanEvent(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
+}
+
+func Test_NewBoolExprForSpanEventWithOptions(t *testing.T) {
+	_, err := NewBoolExprForSpanEventWithOptions(
+		[]string{`spanevent.name == "foo"`},
+		StandardSpanEventFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottlspanevent.Option{ottlspanevent.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
 }
 
 func Test_NewBoolExprForMetric(t *testing.T) {
@@ -137,7 +150,7 @@ func Test_NewBoolExprForMetric(t *testing.T) {
 		{
 			name: "With Converter",
 			conditions: []string{
-				`IsMatch("test", "pass") == true`,
+				`IsMatch("test", "pass")`,
 			},
 			expectedResult: false,
 		},
@@ -153,6 +166,17 @@ func Test_NewBoolExprForMetric(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
+}
+
+func Test_NewBoolExprForMetricWithOptions(t *testing.T) {
+	_, err := NewBoolExprForMetricWithOptions(
+		[]string{`metric.name == "foo"`},
+		StandardMetricFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottlmetric.Option{ottlmetric.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
 }
 
 func Test_NewBoolExprForDataPoint(t *testing.T) {
@@ -179,7 +203,7 @@ func Test_NewBoolExprForDataPoint(t *testing.T) {
 		{
 			name: "With Converter",
 			conditions: []string{
-				`IsMatch("test", "pass") == true`,
+				`IsMatch("test", "pass")`,
 			},
 			expectedResult: false,
 		},
@@ -195,6 +219,17 @@ func Test_NewBoolExprForDataPoint(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
+}
+
+func Test_NewBoolExprForDataPointWithOptions(t *testing.T) {
+	_, err := NewBoolExprForDataPointWithOptions(
+		[]string{"datapoint.count > 0"},
+		StandardDataPointFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottldatapoint.Option{ottldatapoint.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
 }
 
 func Test_NewBoolExprForLog(t *testing.T) {
@@ -221,7 +256,7 @@ func Test_NewBoolExprForLog(t *testing.T) {
 		{
 			name: "With Converter",
 			conditions: []string{
-				`IsMatch("test", "pass") == true`,
+				`IsMatch("test", "pass")`,
 			},
 			expectedResult: false,
 		},
@@ -237,4 +272,129 @@ func Test_NewBoolExprForLog(t *testing.T) {
 			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
+}
+
+func Test_NewBoolExprForLogWithOptions(t *testing.T) {
+	_, err := NewBoolExprForLogWithOptions(
+		[]string{`log.body != ""`},
+		StandardLogFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottllog.Option{ottllog.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
+}
+
+func Test_NewBoolExprForResource(t *testing.T) {
+	tests := []struct {
+		name           string
+		conditions     []string
+		expectedResult bool
+	}{
+		{
+			name: "basic",
+			conditions: []string{
+				"true == true",
+			},
+			expectedResult: true,
+		},
+		{
+			name: "multiple",
+			conditions: []string{
+				"false == true",
+				"true == true",
+			},
+			expectedResult: true,
+		},
+		{
+			name: "With Converter",
+			conditions: []string{
+				`IsMatch("test", "pass")`,
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resBoolExpr, err := NewBoolExprForResource(tt.conditions, StandardResourceFuncs(), ottl.PropagateError, componenttest.NewNopTelemetrySettings())
+			assert.NoError(t, err)
+			assert.NotNil(t, resBoolExpr)
+			result, err := resBoolExpr.Eval(context.Background(), ottlresource.TransformContext{})
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func Test_NewBoolExprForResourceWithOptions(t *testing.T) {
+	_, err := NewBoolExprForResourceWithOptions(
+		[]string{`resource.dropped_attributes_count == 0`},
+		StandardResourceFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottlresource.Option{ottlresource.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
+}
+
+func Test_NewBoolExprForScope(t *testing.T) {
+	tests := []struct {
+		name           string
+		conditions     []string
+		expectedResult bool
+	}{
+		{
+			name: "basic",
+			conditions: []string{
+				"true == true",
+			},
+			expectedResult: true,
+		},
+		{
+			name: "multiple conditions resulting true",
+			conditions: []string{
+				"false == true",
+				"true == true",
+			},
+			expectedResult: true,
+		},
+		{
+			name: "multiple conditions resulting false",
+			conditions: []string{
+				"false == true",
+				"true == false",
+			},
+			expectedResult: false,
+		},
+		{
+			name: "With Converter",
+			conditions: []string{
+				`IsMatch("test", "pass")`,
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resBoolExpr, err := NewBoolExprForScope(tt.conditions, StandardScopeFuncs(), ottl.PropagateError, componenttest.NewNopTelemetrySettings())
+			assert.NoError(t, err)
+			assert.NotNil(t, resBoolExpr)
+			result, err := resBoolExpr.Eval(context.Background(), ottlscope.TransformContext{})
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func Test_NewBoolExprForScopeWithOptions(t *testing.T) {
+	_, err := NewBoolExprForScopeWithOptions(
+		[]string{`scope.name != ""`},
+		StandardScopeFuncs(),
+		ottl.PropagateError,
+		componenttest.NewNopTelemetrySettings(),
+		[]ottlscope.Option{ottlscope.EnablePathContextNames()},
+	)
+	assert.NoError(t, err)
 }

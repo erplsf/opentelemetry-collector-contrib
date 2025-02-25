@@ -1,178 +1,164 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package filterottl // import "github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filterottl"
 
 import (
-	"context"
-
 	"go.opentelemetry.io/collector/component"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/expr"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottldatapoint"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottllog"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlmetric"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlresource"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlscope"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlspan"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlspanevent"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/ottlfuncs"
 )
 
 // NewBoolExprForSpan creates a BoolExpr[ottlspan.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
 // The passed in functions should use the ottlspan.TransformContext.
-// If a function named `drop` is not present in the function map it will be added automatically so that parsing works as expected
-func NewBoolExprForSpan(conditions []string, functions map[string]interface{}, errorMode ottl.ErrorMode, set component.TelemetrySettings) (expr.BoolExpr[ottlspan.TransformContext], error) {
-	if _, ok := functions["drop"]; !ok {
-		functions["drop"] = drop[ottlspan.TransformContext]
-	}
-	statmentsStr := conditionsToStatements(conditions)
-	parser, err := ottlspan.NewParser(functions, set)
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForSpan(conditions []string, functions map[string]ottl.Factory[ottlspan.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottlspan.TransformContext], error) {
+	return NewBoolExprForSpanWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForSpanWithOptions is like NewBoolExprForSpan, but with additional options.
+func NewBoolExprForSpanWithOptions(conditions []string, functions map[string]ottl.Factory[ottlspan.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottlspan.Option) (*ottl.ConditionSequence[ottlspan.TransformContext], error) {
+	parser, err := ottlspan.NewParser(functions, set, parserOptions...)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := parser.ParseStatements(statmentsStr)
+	statements, err := parser.ParseConditions(conditions)
 	if err != nil {
 		return nil, err
 	}
-	s := ottlspan.NewStatements(statements, set, ottlspan.WithErrorMode(errorMode))
-	return &s, nil
+	c := ottlspan.NewConditionSequence(statements, set, ottlspan.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }
 
 // NewBoolExprForSpanEvent creates a BoolExpr[ottlspanevent.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
 // The passed in functions should use the ottlspanevent.TransformContext.
-// If a function named `drop` is not present in the function map it will be added automatically so that parsing works as expected
-func NewBoolExprForSpanEvent(conditions []string, functions map[string]interface{}, errorMode ottl.ErrorMode, set component.TelemetrySettings) (expr.BoolExpr[ottlspanevent.TransformContext], error) {
-	if _, ok := functions["drop"]; !ok {
-		functions["drop"] = drop[ottlspanevent.TransformContext]
-	}
-	statmentsStr := conditionsToStatements(conditions)
-	parser, err := ottlspanevent.NewParser(functions, set)
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForSpanEvent(conditions []string, functions map[string]ottl.Factory[ottlspanevent.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottlspanevent.TransformContext], error) {
+	return NewBoolExprForSpanEventWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForSpanEventWithOptions is like NewBoolExprForSpanEvent, but with additional options.
+func NewBoolExprForSpanEventWithOptions(conditions []string, functions map[string]ottl.Factory[ottlspanevent.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottlspanevent.Option) (*ottl.ConditionSequence[ottlspanevent.TransformContext], error) {
+	parser, err := ottlspanevent.NewParser(functions, set, parserOptions...)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := parser.ParseStatements(statmentsStr)
+	statements, err := parser.ParseConditions(conditions)
 	if err != nil {
 		return nil, err
 	}
-	s := ottlspanevent.NewStatements(statements, set, ottlspanevent.WithErrorMode(errorMode))
-	return &s, nil
+	c := ottlspanevent.NewConditionSequence(statements, set, ottlspanevent.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }
 
 // NewBoolExprForMetric creates a BoolExpr[ottlmetric.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
 // The passed in functions should use the ottlmetric.TransformContext.
-// If a function named `drop` is not present in the function map it will be added automatically so that parsing works as expected
-func NewBoolExprForMetric(conditions []string, functions map[string]interface{}, errorMode ottl.ErrorMode, set component.TelemetrySettings) (expr.BoolExpr[ottlmetric.TransformContext], error) {
-	if _, ok := functions["drop"]; !ok {
-		functions["drop"] = drop[ottlmetric.TransformContext]
-	}
-	statmentsStr := conditionsToStatements(conditions)
-	parser, err := ottlmetric.NewParser(functions, set)
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForMetric(conditions []string, functions map[string]ottl.Factory[ottlmetric.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottlmetric.TransformContext], error) {
+	return NewBoolExprForMetricWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForMetricWithOptions is like NewBoolExprForMetric, but with additional options.
+func NewBoolExprForMetricWithOptions(conditions []string, functions map[string]ottl.Factory[ottlmetric.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottlmetric.Option) (*ottl.ConditionSequence[ottlmetric.TransformContext], error) {
+	parser, err := ottlmetric.NewParser(functions, set, parserOptions...)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := parser.ParseStatements(statmentsStr)
+	statements, err := parser.ParseConditions(conditions)
 	if err != nil {
 		return nil, err
 	}
-	s := ottlmetric.NewStatements(statements, set, ottlmetric.WithErrorMode(errorMode))
-	return &s, nil
+	c := ottlmetric.NewConditionSequence(statements, set, ottlmetric.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }
 
 // NewBoolExprForDataPoint creates a BoolExpr[ottldatapoint.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
 // The passed in functions should use the ottldatapoint.TransformContext.
-// If a function named `drop` is not present in the function map it will be added automatically so that parsing works as expected
-func NewBoolExprForDataPoint(conditions []string, functions map[string]interface{}, errorMode ottl.ErrorMode, set component.TelemetrySettings) (expr.BoolExpr[ottldatapoint.TransformContext], error) {
-	if _, ok := functions["drop"]; !ok {
-		functions["drop"] = drop[ottldatapoint.TransformContext]
-	}
-	statmentsStr := conditionsToStatements(conditions)
-	parser, err := ottldatapoint.NewParser(functions, set)
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForDataPoint(conditions []string, functions map[string]ottl.Factory[ottldatapoint.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottldatapoint.TransformContext], error) {
+	return NewBoolExprForDataPointWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForDataPointWithOptions is like NewBoolExprForDataPoint, but with additional options.
+func NewBoolExprForDataPointWithOptions(conditions []string, functions map[string]ottl.Factory[ottldatapoint.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottldatapoint.Option) (*ottl.ConditionSequence[ottldatapoint.TransformContext], error) {
+	parser, err := ottldatapoint.NewParser(functions, set, parserOptions...)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := parser.ParseStatements(statmentsStr)
+	statements, err := parser.ParseConditions(conditions)
 	if err != nil {
 		return nil, err
 	}
-	s := ottldatapoint.NewStatements(statements, set, ottldatapoint.WithErrorMode(errorMode))
-	return &s, nil
+	c := ottldatapoint.NewConditionSequence(statements, set, ottldatapoint.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }
 
 // NewBoolExprForLog creates a BoolExpr[ottllog.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
 // The passed in functions should use the ottllog.TransformContext.
-// If a function named `drop` is not present in the function map it will be added automatically so that parsing works as expected
-func NewBoolExprForLog(conditions []string, functions map[string]interface{}, errorMode ottl.ErrorMode, set component.TelemetrySettings) (expr.BoolExpr[ottllog.TransformContext], error) {
-	if _, ok := functions["drop"]; !ok {
-		functions["drop"] = drop[ottllog.TransformContext]
-	}
-	statmentsStr := conditionsToStatements(conditions)
-	parser, err := ottllog.NewParser(functions, set)
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForLog(conditions []string, functions map[string]ottl.Factory[ottllog.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottllog.TransformContext], error) {
+	return NewBoolExprForLogWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForLogWithOptions is like NewBoolExprForLog, but with additional options.
+func NewBoolExprForLogWithOptions(conditions []string, functions map[string]ottl.Factory[ottllog.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottllog.Option) (*ottl.ConditionSequence[ottllog.TransformContext], error) {
+	parser, err := ottllog.NewParser(functions, set, parserOptions...)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := parser.ParseStatements(statmentsStr)
+	statements, err := parser.ParseConditions(conditions)
 	if err != nil {
 		return nil, err
 	}
-	s := ottllog.NewStatements(statements, set, ottllog.WithErrorMode(errorMode))
-	return &s, nil
+	c := ottllog.NewConditionSequence(statements, set, ottllog.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }
 
-func conditionsToStatements(conditions []string) []string {
-	statements := make([]string, len(conditions))
-	for i, condition := range conditions {
-		statements[i] = "drop() where " + condition
+// NewBoolExprForResource creates a BoolExpr[ottlresource.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
+// The passed in functions should use the ottlresource.TransformContext.
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForResource(conditions []string, functions map[string]ottl.Factory[ottlresource.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottlresource.TransformContext], error) {
+	return NewBoolExprForResourceWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForResourceWithOptions is like NewBoolExprForResource, but with additional options.
+func NewBoolExprForResourceWithOptions(conditions []string, functions map[string]ottl.Factory[ottlresource.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottlresource.Option) (*ottl.ConditionSequence[ottlresource.TransformContext], error) {
+	parser, err := ottlresource.NewParser(functions, set, parserOptions...)
+	if err != nil {
+		return nil, err
 	}
-	return statements
-}
-
-func StandardSpanFuncs() map[string]interface{} {
-	return standardFuncs[ottlspan.TransformContext]()
-}
-
-func StandardSpanEventFuncs() map[string]interface{} {
-	return standardFuncs[ottlspanevent.TransformContext]()
-}
-
-func StandardMetricFuncs() map[string]interface{} {
-	return standardFuncs[ottlmetric.TransformContext]()
-}
-
-func StandardDataPointFuncs() map[string]interface{} {
-	return standardFuncs[ottldatapoint.TransformContext]()
-}
-
-func StandardLogFuncs() map[string]interface{} {
-	return standardFuncs[ottllog.TransformContext]()
-}
-
-func standardFuncs[K any]() map[string]interface{} {
-	return map[string]interface{}{
-		"TraceID":     ottlfuncs.TraceID[K],
-		"SpanID":      ottlfuncs.SpanID[K],
-		"IsMatch":     ottlfuncs.IsMatch[K],
-		"Concat":      ottlfuncs.Concat[K],
-		"Split":       ottlfuncs.Split[K],
-		"Int":         ottlfuncs.Int[K],
-		"ConvertCase": ottlfuncs.ConvertCase[K],
-		"Substring":   ottlfuncs.Substring[K],
-		"drop":        drop[K],
+	statements, err := parser.ParseConditions(conditions)
+	if err != nil {
+		return nil, err
 	}
+	c := ottlresource.NewConditionSequence(statements, set, ottlresource.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }
 
-func drop[K any]() (ottl.ExprFunc[K], error) {
-	return func(context.Context, K) (interface{}, error) {
-		return true, nil
-	}, nil
+// NewBoolExprForScope creates a BoolExpr[ottlscope.TransformContext] that will return true if any of the given OTTL conditions evaluate to true.
+// The passed in functions should use the ottlresource.TransformContext.
+// If a function named `match` is not present in the function map it will be added automatically so that parsing works as expected
+func NewBoolExprForScope(conditions []string, functions map[string]ottl.Factory[ottlscope.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings) (*ottl.ConditionSequence[ottlscope.TransformContext], error) {
+	return NewBoolExprForScopeWithOptions(conditions, functions, errorMode, set, nil)
+}
+
+// NewBoolExprForScopeWithOptions is like NewBoolExprForScope, but with additional options.
+func NewBoolExprForScopeWithOptions(conditions []string, functions map[string]ottl.Factory[ottlscope.TransformContext], errorMode ottl.ErrorMode, set component.TelemetrySettings, parserOptions []ottlscope.Option) (*ottl.ConditionSequence[ottlscope.TransformContext], error) {
+	parser, err := ottlscope.NewParser(functions, set, parserOptions...)
+	if err != nil {
+		return nil, err
+	}
+	statements, err := parser.ParseConditions(conditions)
+	if err != nil {
+		return nil, err
+	}
+	c := ottlscope.NewConditionSequence(statements, set, ottlscope.WithConditionSequenceErrorMode(errorMode))
+	return &c, nil
 }

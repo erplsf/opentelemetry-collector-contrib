@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package solacereceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/solacereceiver"
 
@@ -19,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/collector/config/configopaque"
 	"go.opentelemetry.io/collector/config/configtls"
 )
 
@@ -29,6 +19,7 @@ const (
 
 var (
 	errMissingAuthDetails       = errors.New("authentication details are required, either for plain user name password or XOAUTH2 or client certificate")
+	errTooManyAuthDetails       = errors.New("only one authentication method must be used")
 	errMissingQueueName         = errors.New("queue definition is required, queue definition has format queue://<queuename>")
 	errMissingPlainTextParams   = errors.New("missing plain text auth params: Username, Password")
 	errMissingXauth2Params      = errors.New("missing xauth2 text auth params: Username, Bearer")
@@ -47,7 +38,7 @@ type Config struct {
 	// The maximum number of unacknowledged messages the Solace broker can transmit, to configure AMQP Link
 	MaxUnacked int32 `mapstructure:"max_unacknowledged"`
 
-	TLS configtls.TLSClientSetting `mapstructure:"tls,omitempty"`
+	TLS configtls.ClientConfig `mapstructure:"tls,omitempty"`
 
 	Auth Authentication `mapstructure:"auth"`
 
@@ -56,8 +47,21 @@ type Config struct {
 
 // Validate checks the receiver configuration is valid
 func (cfg *Config) Validate() error {
-	if cfg.Auth.PlainText == nil && cfg.Auth.External == nil && cfg.Auth.XAuth2 == nil {
+	authMethod := 0
+	if cfg.Auth.PlainText != nil {
+		authMethod++
+	}
+	if cfg.Auth.External != nil {
+		authMethod++
+	}
+	if cfg.Auth.XAuth2 != nil {
+		authMethod++
+	}
+	if authMethod == 0 {
 		return errMissingAuthDetails
+	}
+	if authMethod > 1 {
+		return errTooManyAuthDetails
 	}
 	if len(strings.TrimSpace(cfg.Queue)) == 0 {
 		return errMissingQueueName
@@ -79,8 +83,8 @@ type Authentication struct {
 
 // SaslPlainTextConfig defines SASL PLAIN authentication.
 type SaslPlainTextConfig struct {
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Username string              `mapstructure:"username"`
+	Password configopaque.String `mapstructure:"password"`
 }
 
 // SaslXAuth2Config defines the configuration for the SASL XAUTH2 authentication.
@@ -90,8 +94,7 @@ type SaslXAuth2Config struct {
 }
 
 // SaslExternalConfig defines the configuration for the SASL External used in conjunction with TLS client authentication.
-type SaslExternalConfig struct {
-}
+type SaslExternalConfig struct{}
 
 // FlowControl defines the configuration for what to do in backpressure scenarios, e.g. memorylimiter errors
 type FlowControl struct {

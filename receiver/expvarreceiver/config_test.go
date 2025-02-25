@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package expvarreceiver
 
@@ -26,7 +15,8 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
-	"go.opentelemetry.io/collector/receiver/scraperhelper"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+	"go.opentelemetry.io/collector/scraper/scraperhelper"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/expvarreceiver/internal/metadata"
 )
@@ -38,39 +28,40 @@ func TestLoadConfig(t *testing.T) {
 	metricCfg := metadata.DefaultMetricsBuilderConfig()
 	metricCfg.Metrics.ProcessRuntimeMemstatsTotalAlloc.Enabled = true
 	metricCfg.Metrics.ProcessRuntimeMemstatsMallocs.Enabled = false
-
+	clientConfig := confighttp.NewDefaultClientConfig()
+	clientConfig.Endpoint = "http://localhost:8000/custom/path"
+	clientConfig.Timeout = time.Second * 5
 	tests := []struct {
 		id           component.ID
 		expected     component.Config
 		errorMessage string
 	}{
 		{
-			id:       component.NewIDWithName(typeStr, "default"),
+			id:       component.NewIDWithName(metadata.Type, "default"),
 			expected: factory.CreateDefaultConfig(),
 		},
 		{
-			id: component.NewIDWithName(typeStr, "custom"),
+			id: component.NewIDWithName(metadata.Type, "custom"),
 			expected: &Config{
-				ScraperControllerSettings: scraperhelper.ScraperControllerSettings{
+				ControllerConfig: scraperhelper.ControllerConfig{
 					CollectionInterval: 30 * time.Second,
+					InitialDelay:       time.Second,
+					Timeout:            time.Second * 5,
 				},
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "http://localhost:8000/custom/path",
-					Timeout:  time.Second * 5,
-				},
+				ClientConfig:         clientConfig,
 				MetricsBuilderConfig: metricCfg,
 			},
 		},
 		{
-			id:           component.NewIDWithName(typeStr, "bad_schemeless_endpoint"),
+			id:           component.NewIDWithName(metadata.Type, "bad_schemeless_endpoint"),
 			errorMessage: "scheme must be 'http' or 'https', but was 'localhost'",
 		},
 		{
-			id:           component.NewIDWithName(typeStr, "bad_hostless_endpoint"),
+			id:           component.NewIDWithName(metadata.Type, "bad_hostless_endpoint"),
 			errorMessage: "host not found in HTTP endpoint",
 		},
 		{
-			id:           component.NewIDWithName(typeStr, "bad_invalid_url"),
+			id:           component.NewIDWithName(metadata.Type, "bad_invalid_url"),
 			errorMessage: "endpoint is not a valid URL: parse \"#$%^&*()_\": invalid URL escape \"%^&\"",
 		},
 	}
@@ -85,14 +76,14 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
 			if tt.expected == nil {
-				assert.EqualError(t, component.ValidateConfig(cfg), tt.errorMessage)
+				assert.EqualError(t, xconfmap.Validate(cfg), tt.errorMessage)
 				return
 			}
-			assert.NoError(t, component.ValidateConfig(cfg))
-			if diff := cmp.Diff(tt.expected, cfg, cmpopts.IgnoreUnexported(metadata.MetricSettings{})); diff != "" {
+			assert.NoError(t, xconfmap.Validate(cfg))
+			if diff := cmp.Diff(tt.expected, cfg, cmpopts.IgnoreUnexported(metadata.MetricConfig{})); diff != "" {
 				t.Errorf("Config mismatch (-expected +actual):\n%s", diff)
 			}
 		})

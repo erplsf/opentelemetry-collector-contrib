@@ -1,21 +1,17 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package transformprocessor // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor"
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
+
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/confmap"
+	"go.opentelemetry.io/collector/featuregate"
+	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
@@ -23,6 +19,15 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor/internal/logs"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor/internal/metrics"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor/internal/traces"
+)
+
+var (
+	flatLogsFeatureGate = featuregate.GlobalRegistry().MustRegister("transform.flatten.logs", featuregate.StageAlpha,
+		featuregate.WithRegisterDescription("Flatten log data prior to transformation so every record has a unique copy of the resource and scope. Regroups logs based on resource and scope after transformations."),
+		featuregate.WithRegisterFromVersion("v0.103.0"),
+		featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/32080#issuecomment-2120764953"),
+	)
+	errFlatLogsGateDisabled = errors.New("'flatten_data' requires the 'transform.flatten.logs' feature gate to be enabled")
 )
 
 // Config defines the configuration for the processor.
@@ -37,11 +42,96 @@ type Config struct {
 	TraceStatements  []common.ContextStatements `mapstructure:"trace_statements"`
 	MetricStatements []common.ContextStatements `mapstructure:"metric_statements"`
 	LogStatements    []common.ContextStatements `mapstructure:"log_statements"`
+
+	FlattenData bool `mapstructure:"flatten_data"`
+	logger      *zap.Logger
+}
+
+// Unmarshal is used internally by mapstructure to parse the transformprocessor configuration (Config),
+// adding support to structured and flat configuration styles.
+// When the flat configuration style is used, each statement becomes a new common.ContextStatements
+// object, with empty [common.ContextStatements.Context] value.
+// On the other hand, structured configurations are parsed following the mapstructure Config format.
+// Mixed configuration styles are also supported.
+//
+// Example of flat configuration:
+//
+//	log_statements:
+//	  - set(attributes["service.new_name"], attributes["service.name"])
+//	  - delete_key(attributes, "service.name")
+//
+// Example of structured configuration:
+//
+//	log_statements:
+//	  - context: "span"
+//	    statements:
+//	      - set(attributes["service.new_name"], attributes["service.name"])
+//	      - delete_key(attributes, "service.name")
+func (c *Config) Unmarshal(conf *confmap.Conf) error {
+	if conf == nil {
+		return nil
+	}
+
+	contextStatementsFields := map[string]*[]common.ContextStatements{
+		"trace_statements":  &c.TraceStatements,
+		"metric_statements": &c.MetricStatements,
+		"log_statements":    &c.LogStatements,
+	}
+
+	flatContextStatements := map[string][]int{}
+	contextStatementsPatch := map[string]any{}
+	for fieldName := range contextStatementsFields {
+		if !conf.IsSet(fieldName) {
+			continue
+		}
+		rawVal := conf.Get(fieldName)
+		values, ok := rawVal.([]any)
+		if !ok {
+			return fmt.Errorf("invalid %s type, expected: array, got: %t", fieldName, rawVal)
+		}
+		if len(values) == 0 {
+			continue
+		}
+
+		stmts := make([]any, 0, len(values))
+		for i, value := range values {
+			// Array of strings means it's a flat configuration style
+			if reflect.TypeOf(value).Kind() == reflect.String {
+				stmts = append(stmts, map[string]any{"statements": []any{value}})
+				flatContextStatements[fieldName] = append(flatContextStatements[fieldName], i)
+			} else {
+				stmts = append(stmts, value)
+			}
+		}
+		contextStatementsPatch[fieldName] = stmts
+	}
+
+	if len(contextStatementsPatch) > 0 {
+		err := conf.Merge(confmap.NewFromStringMap(contextStatementsPatch))
+		if err != nil {
+			return err
+		}
+	}
+
+	err := conf.Unmarshal(c)
+	if err != nil {
+		return err
+	}
+
+	for fieldName, indexes := range flatContextStatements {
+		for _, i := range indexes {
+			(*contextStatementsFields[fieldName])[i].SharedCache = true
+		}
+	}
+
+	return err
 }
 
 var _ component.Config = (*Config)(nil)
 
 func (c *Config) Validate() error {
+	var errors error
+
 	if len(c.TraceStatements) > 0 {
 		pc, err := common.NewTraceParserCollection(component.TelemetrySettings{Logger: zap.NewNop()}, common.WithSpanParser(traces.SpanFunctions()), common.WithSpanEventParser(traces.SpanEventFunctions()))
 		if err != nil {
@@ -50,7 +140,7 @@ func (c *Config) Validate() error {
 		for _, cs := range c.TraceStatements {
 			_, err = pc.ParseContextStatements(cs)
 			if err != nil {
-				return err
+				errors = multierr.Append(errors, err)
 			}
 		}
 	}
@@ -61,9 +151,9 @@ func (c *Config) Validate() error {
 			return err
 		}
 		for _, cs := range c.MetricStatements {
-			_, err = pc.ParseContextStatements(cs)
+			_, err := pc.ParseContextStatements(cs)
 			if err != nil {
-				return err
+				errors = multierr.Append(errors, err)
 			}
 		}
 	}
@@ -76,10 +166,14 @@ func (c *Config) Validate() error {
 		for _, cs := range c.LogStatements {
 			_, err = pc.ParseContextStatements(cs)
 			if err != nil {
-				return err
+				errors = multierr.Append(errors, err)
 			}
 		}
 	}
 
-	return nil
+	if c.FlattenData && !flatLogsFeatureGate.IsEnabled() {
+		errors = multierr.Append(errors, errFlatLogsGateDisabled)
+	}
+
+	return errors
 }

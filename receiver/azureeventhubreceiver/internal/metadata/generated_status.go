@@ -6,7 +6,13 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("azureeventhub")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureeventhubreceiver"
+)
+
 const (
-	Type      = "azureeventhubreceiver"
-	Stability = component.StabilityLevelAlpha
+	MetricsStability = component.StabilityLevelAlpha
+	LogsStability    = component.StabilityLevelAlpha
+	TracesStability  = component.StabilityLevelAlpha
 )

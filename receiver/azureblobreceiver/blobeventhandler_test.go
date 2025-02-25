@@ -1,16 +1,5 @@
-// Copyright OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package azureblobreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureblobreceiver"
 
@@ -41,7 +30,7 @@ func TestNewBlobEventHandler(t *testing.T) {
 	assert.Equal(t, blobClient, blobEventHandler.blobClient)
 }
 
-func TestNewMessageHangdler(t *testing.T) {
+func TestNewMessageHandler(t *testing.T) {
 	blobClient := newMockBlobClient()
 	blobEventHandler := getBlobEventHandler(t, blobClient)
 
@@ -61,7 +50,6 @@ func TestNewMessageHangdler(t *testing.T) {
 	logsDataConsumer.AssertNumberOfCalls(t, "consumeLogsJSON", 1)
 	tracesDataConsumer.AssertNumberOfCalls(t, "consumeTracesJSON", 1)
 	blobClient.AssertNumberOfCalls(t, "readBlob", 2)
-
 }
 
 func getEvent(eventData []byte) *eventhub.Event {

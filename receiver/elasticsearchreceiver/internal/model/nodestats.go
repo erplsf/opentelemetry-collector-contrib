@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package model // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/elasticsearchreceiver/internal/model"
 
@@ -226,6 +215,7 @@ type BasicIndexOperation struct {
 
 type MergeOperations struct {
 	BasicIndexOperation
+	Current          int64 `json:"current"`
 	TotalSizeInBytes int64 `json:"total_size_in_bytes"`
 	TotalDocs        int64 `json:"total_docs"`
 }
@@ -283,13 +273,13 @@ type JVMInfo struct {
 }
 
 type JVMMemoryInfo struct {
-	HeapUsedInBy        int64          `json:"heap_used_in_bytes"`
-	NonHeapUsedInBy     int64          `json:"non_heap_used_in_bytes"`
-	MaxHeapInBy         int64          `json:"heap_max_in_bytes"`
-	HeapCommittedInBy   int64          `json:"heap_committed_in_bytes"`
-	HeapUsedPercent     int64          `json:"heap_used_percent"`
-	NonHeapComittedInBy int64          `json:"non_heap_committed_in_bytes"`
-	MemoryPools         JVMMemoryPools `json:"pools"`
+	HeapUsedInBy         int64          `json:"heap_used_in_bytes"`
+	NonHeapUsedInBy      int64          `json:"non_heap_used_in_bytes"`
+	MaxHeapInBy          int64          `json:"heap_max_in_bytes"`
+	HeapCommittedInBy    int64          `json:"heap_committed_in_bytes"`
+	HeapUsedPercent      int64          `json:"heap_used_percent"`
+	NonHeapCommittedInBy int64          `json:"non_heap_committed_in_bytes"`
+	MemoryPools          JVMMemoryPools `json:"pools"`
 }
 
 type JVMMemoryPools struct {

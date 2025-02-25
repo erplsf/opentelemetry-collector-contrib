@@ -1,16 +1,5 @@
-// Copyright OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package azuremonitorexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/azuremonitorexporter"
 
@@ -41,8 +30,8 @@ type traceVisitor struct {
 func (v *traceVisitor) visit(
 	resource pcommon.Resource,
 	scope pcommon.InstrumentationScope,
-	span ptrace.Span) (ok bool) {
-
+	span ptrace.Span,
+) (ok bool) {
 	envelopes, err := spanToEnvelopes(resource, scope, span, v.exporter.config.SpanEventsEnabled, v.exporter.logger)
 	if err != nil {
 		// record the error and short-circuit
@@ -57,29 +46,36 @@ func (v *traceVisitor) visit(
 		v.exporter.transportChannel.Send(envelope)
 	}
 
+	// Flush the transport channel to force the telemetry to be sent
+	v.exporter.transportChannel.Flush()
 	v.processed++
 
 	return true
 }
 
-func (exporter *traceExporter) onTraceData(context context.Context, traceData ptrace.Traces) error {
+func (exporter *traceExporter) onTraceData(_ context.Context, traceData ptrace.Traces) error {
 	spanCount := traceData.SpanCount()
 	if spanCount == 0 {
 		return nil
 	}
 
 	visitor := &traceVisitor{exporter: exporter}
-	Accept(traceData, visitor)
+	accept(traceData, visitor)
 	return visitor.err
 }
 
 // Returns a new instance of the trace exporter
-func newTracesExporter(config *Config, transportChannel transportChannel, set exporter.CreateSettings) (exporter.Traces, error) {
+func newTracesExporter(config *Config, transportChannel transportChannel, set exporter.Settings) (exporter.Traces, error) {
 	exporter := &traceExporter{
 		config:           config,
 		transportChannel: transportChannel,
 		logger:           set.Logger,
 	}
 
-	return exporterhelper.NewTracesExporter(context.TODO(), set, config, exporter.onTraceData)
+	return exporterhelper.NewTraces(
+		context.TODO(),
+		set,
+		config,
+		exporter.onTraceData,
+		exporterhelper.WithQueue(config.QueueSettings))
 }

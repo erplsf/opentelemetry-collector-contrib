@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package awsfirehosereceiver
 
@@ -24,32 +13,46 @@ import (
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awsfirehosereceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
-	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
-	require.NoError(t, err)
+	for _, configType := range []string{
+		"cwmetrics", "cwlogs", "otlp_v1", "invalid",
+	} {
+		t.Run(configType, func(t *testing.T) {
+			fileName := configType + "_config.yaml"
+			cm, err := confmaptest.LoadConf(filepath.Join("testdata", fileName))
+			require.NoError(t, err)
 
-	factory := NewFactory()
-	cfg := factory.CreateDefaultConfig()
+			factory := NewFactory()
+			cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "").String())
-	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "").String())
+			require.NoError(t, err)
+			require.NoError(t, sub.Unmarshal(cfg))
 
-	assert.NoError(t, component.ValidateConfig(cfg))
-
-	require.Equal(t, &Config{
-		RecordType: "cwmetrics",
-		AccessKey:  "some_access_key",
-		HTTPServerSettings: confighttp.HTTPServerSettings{
-			Endpoint: "0.0.0.0:4433",
-			TLSSetting: &configtls.TLSServerSetting{
-				TLSSetting: configtls.TLSSetting{
-					CertFile: "server.crt",
-					KeyFile:  "server.key",
-				},
-			},
-		},
-	}, cfg)
+			err = xconfmap.Validate(cfg)
+			if configType == "invalid" {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				require.Equal(t, &Config{
+					RecordType: configType,
+					AccessKey:  "some_access_key",
+					ServerConfig: confighttp.ServerConfig{
+						Endpoint: "0.0.0.0:4433",
+						TLSSetting: &configtls.ServerConfig{
+							Config: configtls.Config{
+								CertFile: "server.crt",
+								KeyFile:  "server.key",
+							},
+						},
+					},
+				}, cfg)
+			}
+		})
+	}
 }

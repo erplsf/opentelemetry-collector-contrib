@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package traces // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor/internal/traces"
 
@@ -18,16 +7,22 @@ import (
 	"context"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor/internal/common"
 )
 
+type parsedContextStatements struct {
+	common.TracesConsumer
+	sharedCache bool
+}
+
 type Processor struct {
-	contexts []consumer.Traces
+	contexts []parsedContextStatements
 	logger   *zap.Logger
 }
 
@@ -37,13 +32,18 @@ func NewProcessor(contextStatements []common.ContextStatements, errorMode ottl.E
 		return nil, err
 	}
 
-	contexts := make([]consumer.Traces, len(contextStatements))
+	contexts := make([]parsedContextStatements, len(contextStatements))
+	var errors error
 	for i, cs := range contextStatements {
 		context, err := pc.ParseContextStatements(cs)
 		if err != nil {
-			return nil, err
+			errors = multierr.Append(errors, err)
 		}
-		contexts[i] = context
+		contexts[i] = parsedContextStatements{context, cs.SharedCache}
+	}
+
+	if errors != nil {
+		return nil, errors
 	}
 
 	return &Processor{
@@ -53,8 +53,13 @@ func NewProcessor(contextStatements []common.ContextStatements, errorMode ottl.E
 }
 
 func (p *Processor) ProcessTraces(ctx context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	sharedContextCache := make(map[common.ContextID]*pcommon.Map, len(p.contexts))
 	for _, c := range p.contexts {
-		err := c.ConsumeTraces(ctx, td)
+		var cache *pcommon.Map
+		if c.sharedCache {
+			cache = common.LoadContextCache(sharedContextCache, c.Context())
+		}
+		err := c.ConsumeTraces(ctx, td, cache)
 		if err != nil {
 			p.logger.Error("failed processing traces", zap.Error(err))
 			return td, err

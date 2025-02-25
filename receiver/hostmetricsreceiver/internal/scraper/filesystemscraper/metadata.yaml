@@ -1,4 +1,12 @@
-type: hostmetricsreceiver/filesystem
+type: filesystem
+
+status:
+  class: scraper
+  stability:
+    beta: [metrics]
+  distributions: [core, contrib, k8s]
+  codeowners:
+    active: [dmitryax, braydonk]
 
 sem_conv_version: 1.9.0
 
@@ -31,7 +39,7 @@ metrics:
     unit: By
     sum:
       value_type: int
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       monotonic: false
     attributes: [device, mode, mountpoint, type, state]
 
@@ -41,14 +49,14 @@ metrics:
     unit: "{inodes}"
     sum:
       value_type: int
-      aggregation: cumulative
+      aggregation_temporality: cumulative
       monotonic: false
     attributes: [device, mode, mountpoint, type, state]
 
   system.filesystem.utilization:
     enabled: false
     description: Fraction of filesystem bytes used.
-    unit: 1
+    unit: "1"
     gauge:
       value_type: double
     attributes: [device, mode, mountpoint, type]

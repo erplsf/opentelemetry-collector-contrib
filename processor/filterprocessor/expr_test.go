@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package filterprocessor
 
@@ -29,11 +18,14 @@ import (
 	"go.opentelemetry.io/collector/processor/processortest"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/goldendataset"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filtermetric"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filterconfig"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor/internal/metadata"
 )
 
-const filteredMetric = "p0_metric_1"
-const filteredAttrKey = "pt-label-key-1"
+const (
+	filteredMetric  = "p0_metric_1"
+	filteredAttrKey = "pt-label-key-1"
+)
 
 var filteredAttrVal = pcommon.NewValueStr("pt-label-val-1")
 
@@ -52,7 +44,7 @@ func testMatchError(t *testing.T, mdType pmetric.MetricType, mvType pmetric.Numb
 		err := proc.ConsumeMetrics(context.Background(), testData("", 1, mdType, mvType))
 		assert.Error(t, err)
 		// assert that metrics not be filtered as a result
-		assert.Len(t, next.AllMetrics(), 0)
+		assert.Empty(t, next.AllMetrics())
 	})
 }
 
@@ -137,9 +129,9 @@ func testProcessor(t *testing.T, include []string, exclude []string) (processor.
 	cfg := exprConfig(factory, include, exclude)
 	ctx := context.Background()
 	next := &consumertest.MetricsSink{}
-	proc, err := factory.CreateMetricsProcessor(
+	proc, err := factory.CreateMetrics(
 		ctx,
-		processortest.NewNopCreateSettings(),
+		processortest.NewNopSettings(metadata.Type),
 		cfg,
 		next,
 	)
@@ -153,13 +145,13 @@ func exprConfig(factory processor.Factory, include []string, exclude []string) c
 	pCfg := cfg.(*Config)
 	pCfg.Metrics = MetricFilters{}
 	if include != nil {
-		pCfg.Metrics.Include = &filtermetric.MatchProperties{
+		pCfg.Metrics.Include = &filterconfig.MetricMatchProperties{
 			MatchType:   "expr",
 			Expressions: include,
 		}
 	}
 	if exclude != nil {
-		pCfg.Metrics.Exclude = &filtermetric.MatchProperties{
+		pCfg.Metrics.Exclude = &filterconfig.MetricMatchProperties{
 			MatchType:   "expr",
 			Expressions: exclude,
 		}

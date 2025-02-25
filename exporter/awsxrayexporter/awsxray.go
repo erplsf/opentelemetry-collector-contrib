@@ -1,16 +1,5 @@
-// Copyright 2019, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package awsxrayexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awsxrayexporter"
 
@@ -41,11 +30,11 @@ const (
 // request and then posts the request to the configured region's X-Ray endpoint.
 func newTracesExporter(
 	cfg *Config,
-	set exporter.CreateSettings,
+	set exporter.Settings,
 	cn awsutil.ConnAttr,
 	registry telemetry.Registry,
 ) (exporter.Traces, error) {
-	typeLog := zap.String("type", string(set.ID.Type()))
+	typeLog := zap.String("type", set.ID.Type().String())
 	nameLog := zap.String("name", set.ID.String())
 	logger := set.Logger
 	awsConfig, session, err := awsutil.GetAWSConfigSession(logger, cn, &cfg.AWSSessionSettings)
@@ -59,11 +48,11 @@ func newTracesExporter(
 		opts = append(opts, telemetry.WithLogger(set.Logger))
 		sender = registry.Register(set.ID, cfg.TelemetryConfig, xrayClient, opts...)
 	}
-	return exporterhelper.NewTracesExporter(
+	return exporterhelper.NewTraces(
 		context.TODO(),
 		set,
 		cfg,
-		func(ctx context.Context, td ptrace.Traces) error {
+		func(_ context.Context, td ptrace.Traces) error {
 			var err error
 			logger.Debug("TracesExporter", typeLog, nameLog, zap.Int("#spans", td.SpanCount()))
 
@@ -116,16 +105,21 @@ func extractResourceSpans(config component.Config, logger *zap.Logger, td ptrace
 		for j := 0; j < rspans.ScopeSpans().Len(); j++ {
 			spans := rspans.ScopeSpans().At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
-				document, localErr := translator.MakeSegmentDocumentString(
+				documentsForSpan, localErr := translator.MakeSegmentDocuments(
 					spans.At(k), resource,
 					config.(*Config).IndexedAttributes,
 					config.(*Config).IndexAllAttributes,
-					config.(*Config).LogGroupNames)
+					config.(*Config).LogGroupNames,
+					config.(*Config).skipTimestampValidation)
+
 				if localErr != nil {
 					logger.Debug("Error translating span.", zap.Error(localErr))
 					continue
 				}
-				documents = append(documents, &document)
+
+				for l := range documentsForSpan {
+					documents = append(documents, &documentsForSpan[l])
+				}
 			}
 		}
 	}

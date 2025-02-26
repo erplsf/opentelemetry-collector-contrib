@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package coralogixexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/coralogixexporter"
 
@@ -18,6 +7,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,10 +16,16 @@ import (
 	"go.opentelemetry.io/collector/config/configcompression"
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+	"go.opentelemetry.io/collector/exporter/exporterbatcher"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	"go.opentelemetry.io/collector/exporter/exportertest"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/coralogixexporter/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -43,32 +39,32 @@ func TestLoadConfig(t *testing.T) {
 		expected component.Config
 	}{
 		{
-			id: component.NewIDWithName(typeStr, ""),
+			id: component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
-				QueueSettings: exporterhelper.NewDefaultQueueSettings(),
-				RetrySettings: exporterhelper.NewDefaultRetrySettings(),
+				QueueSettings: exporterhelper.NewDefaultQueueConfig(),
+				BackOffConfig: configretry.NewDefaultBackOffConfig(),
 				PrivateKey:    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 				AppName:       "APP_NAME",
 				// Deprecated: [v0.47.0] SubSystem will remove in the next version
 				SubSystem:       "SUBSYSTEM_NAME",
-				TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
-				DomainSettings: configgrpc.GRPCClientSettings{
-					Compression: configcompression.Gzip,
+				TimeoutSettings: exporterhelper.NewDefaultTimeoutConfig(),
+				DomainSettings: configgrpc.ClientConfig{
+					Compression: configcompression.TypeGzip,
 				},
-				Metrics: configgrpc.GRPCClientSettings{
+				Metrics: configgrpc.ClientConfig{
 					Endpoint:        "https://",
-					Compression:     configcompression.Gzip,
+					Compression:     configcompression.TypeGzip,
 					WriteBufferSize: 512 * 1024,
 				},
-				Logs: configgrpc.GRPCClientSettings{
+				Logs: configgrpc.ClientConfig{
 					Endpoint:    "https://",
-					Compression: configcompression.Gzip,
+					Compression: configcompression.TypeGzip,
 				},
-				Traces: configgrpc.GRPCClientSettings{
+				Traces: configgrpc.ClientConfig{
 					Endpoint:    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-					Compression: configcompression.Gzip,
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting:         configtls.TLSSetting{},
+					Compression: configcompression.TypeGzip,
+					TLSSetting: configtls.ClientConfig{
+						Config:             configtls.Config{},
 						Insecure:           false,
 						InsecureSkipVerify: false,
 						ServerName:         "",
@@ -78,10 +74,10 @@ func TestLoadConfig(t *testing.T) {
 					WaitForReady:    false,
 					BalancerName:    "",
 				},
-				GRPCClientSettings: configgrpc.GRPCClientSettings{
+				ClientConfig: configgrpc.ClientConfig{
 					Endpoint: "https://",
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting:         configtls.TLSSetting{},
+					TLSSetting: configtls.ClientConfig{
+						Config:             configtls.Config{},
 						Insecure:           false,
 						InsecureSkipVerify: false,
 						ServerName:         "",
@@ -94,36 +90,44 @@ func TestLoadConfig(t *testing.T) {
 						"appName":      "APP_NAME",
 					},
 					BalancerName: "",
+				},
+				BatcherConfig: exporterbatcher.Config{
+					Enabled:      false,
+					FlushTimeout: 200 * time.Millisecond,
+					SizeConfig: exporterbatcher.SizeConfig{
+						Sizer:   exporterbatcher.SizerTypeItems,
+						MinSize: 8192,
+					},
 				},
 			},
 		},
 		{
-			id: component.NewIDWithName(typeStr, "all"),
+			id: component.NewIDWithName(metadata.Type, "all"),
 			expected: &Config{
-				QueueSettings: exporterhelper.NewDefaultQueueSettings(),
-				RetrySettings: exporterhelper.NewDefaultRetrySettings(),
+				QueueSettings: exporterhelper.NewDefaultQueueConfig(),
+				BackOffConfig: configretry.NewDefaultBackOffConfig(),
 				PrivateKey:    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 				AppName:       "APP_NAME",
 				// Deprecated: [v0.47.0] SubSystem will remove in the next version
 				SubSystem:       "SUBSYSTEM_NAME",
-				TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
-				DomainSettings: configgrpc.GRPCClientSettings{
-					Compression: configcompression.Gzip,
+				TimeoutSettings: exporterhelper.NewDefaultTimeoutConfig(),
+				DomainSettings: configgrpc.ClientConfig{
+					Compression: configcompression.TypeGzip,
 				},
-				Metrics: configgrpc.GRPCClientSettings{
+				Metrics: configgrpc.ClientConfig{
 					Endpoint:        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-					Compression:     configcompression.Gzip,
+					Compression:     configcompression.TypeGzip,
 					WriteBufferSize: 512 * 1024,
 				},
-				Logs: configgrpc.GRPCClientSettings{
+				Logs: configgrpc.ClientConfig{
 					Endpoint:    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-					Compression: configcompression.Gzip,
+					Compression: configcompression.TypeGzip,
 				},
-				Traces: configgrpc.GRPCClientSettings{
+				Traces: configgrpc.ClientConfig{
 					Endpoint:    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-					Compression: configcompression.Gzip,
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting:         configtls.TLSSetting{},
+					Compression: configcompression.TypeGzip,
+					TLSSetting: configtls.ClientConfig{
+						Config:             configtls.Config{},
 						Insecure:           false,
 						InsecureSkipVerify: false,
 						ServerName:         "",
@@ -133,12 +137,12 @@ func TestLoadConfig(t *testing.T) {
 					WaitForReady:    false,
 					BalancerName:    "",
 				},
-				AppNameAttributes:   []string{"service.namespace"},
-				SubSystemAttributes: []string{"service.name"},
-				GRPCClientSettings: configgrpc.GRPCClientSettings{
+				AppNameAttributes:   []string{"service.namespace", "k8s.namespace.name"},
+				SubSystemAttributes: []string{"service.name", "k8s.deployment.name", "k8s.statefulset.name", "k8s.daemonset.name", "k8s.cronjob.name", "k8s.job.name", "k8s.container.name"},
+				ClientConfig: configgrpc.ClientConfig{
 					Endpoint: "https://",
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting:         configtls.TLSSetting{},
+					TLSSetting: configtls.ClientConfig{
+						Config:             configtls.Config{},
 						Insecure:           false,
 						InsecureSkipVerify: false,
 						ServerName:         "",
@@ -151,6 +155,14 @@ func TestLoadConfig(t *testing.T) {
 						"appName":      "APP_NAME",
 					},
 					BalancerName: "",
+				},
+				BatcherConfig: exporterbatcher.Config{
+					Enabled:      true,
+					FlushTimeout: 3 * time.Second,
+					SizeConfig: exporterbatcher.SizeConfig{
+						Sizer:   exporterbatcher.SizerTypeItems,
+						MinSize: 8888,
+					},
 				},
 			},
 		},
@@ -163,9 +175,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
@@ -177,15 +189,16 @@ func TestTraceExporter(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	te, err := newTracesExporter(cfg, params)
 	assert.NoError(t, err)
 	assert.NotNil(t, te, "failed to create trace exporter")
 	assert.NoError(t, te.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, te.shutdown(context.Background()))
 }
 
 func TestMetricsExporter(t *testing.T) {
@@ -194,17 +207,18 @@ func TestMetricsExporter(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "metrics").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "metrics").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
-	require.NoError(t, component.ValidateConfig(cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
+	require.NoError(t, xconfmap.Validate(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 
 	me, err := newMetricsExporter(cfg, params)
 	require.NoError(t, err)
 	require.NotNil(t, me, "failed to create metrics exporter")
 	require.NoError(t, me.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, me.shutdown(context.Background()))
 }
 
 func TestLogsExporter(t *testing.T) {
@@ -213,17 +227,18 @@ func TestLogsExporter(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "logs").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "logs").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
-	require.NoError(t, component.ValidateConfig(cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
+	require.NoError(t, xconfmap.Validate(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 
-	me, err := newLogsExporter(cfg, params)
+	le, err := newLogsExporter(cfg, params)
 	require.NoError(t, err)
-	require.NotNil(t, me, "failed to create logs exporter")
-	require.NoError(t, me.start(context.Background(), componenttest.NewNopHost()))
+	require.NotNil(t, le, "failed to create logs exporter")
+	require.NoError(t, le.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, le.shutdown(context.Background()))
 }
 
 func TestDomainWithAllExporters(t *testing.T) {
@@ -232,50 +247,124 @@ func TestDomainWithAllExporters(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "domain").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "domain").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	te, err := newTracesExporter(cfg, params)
 	assert.NoError(t, err)
 	assert.NotNil(t, te, "failed to create trace exporter")
 	assert.NoError(t, te.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, te.shutdown(context.Background()))
 
 	me, err := newMetricsExporter(cfg, params)
 	require.NoError(t, err)
 	require.NotNil(t, me, "failed to create metrics exporter")
 	require.NoError(t, me.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, me.shutdown(context.Background()))
 
 	le, err := newLogsExporter(cfg, params)
 	require.NoError(t, err)
 	require.NotNil(t, le, "failed to create logs exporter")
 	require.NoError(t, le.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, le.shutdown(context.Background()))
 }
 
-func TestEndpoindsAndDomainWithAllExporters(t *testing.T) {
+func TestEndpointsAndDomainWithAllExporters(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "domain_endoints").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "domain_endpoints").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	te, err := newTracesExporter(cfg, params)
 	assert.NoError(t, err)
 	assert.NotNil(t, te, "failed to create trace exporter")
 	assert.NoError(t, te.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, te.shutdown(context.Background()))
 
 	me, err := newMetricsExporter(cfg, params)
 	require.NoError(t, err)
 	require.NotNil(t, me, "failed to create metrics exporter")
 	require.NoError(t, me.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, me.shutdown(context.Background()))
 
 	le, err := newLogsExporter(cfg, params)
 	require.NoError(t, err)
 	require.NotNil(t, le, "failed to create logs exporter")
 	require.NoError(t, le.start(context.Background(), componenttest.NewNopHost()))
+	assert.NoError(t, le.shutdown(context.Background()))
+}
+
+func TestGetMetadataFromResource(t *testing.T) {
+	r1 := pcommon.NewResource()
+	r1.Attributes().PutStr("k8s.node.name", "node-test")
+	r1.Attributes().PutStr("k8s.container.name", "container-test")
+	r1.Attributes().PutStr("k8s.deployment.name", "deployment-test")
+	r1.Attributes().PutStr("k8s.namespace.name", "namespace-test")
+
+	r2 := pcommon.NewResource()
+	r2.Attributes().PutStr("k8s.node.name", "node-test")
+	r2.Attributes().PutStr("k8s.namespace.name", "namespace-test")
+
+	r3 := pcommon.NewResource()
+	r3.Attributes().PutStr("cx.application.name", "application")
+	r3.Attributes().PutStr("cx.subsystem.name", "subsystem")
+
+	c := &Config{
+		AppNameAttributes:   []string{"k8s.container.name", "k8s.deployment.name", "k8s.node.name"},
+		SubSystemAttributes: []string{"k8s.namespace.name", "k8s.node.name"},
+	}
+
+	appName, subSystemName := c.getMetadataFromResource(r1)
+	assert.Equal(t, "container-test", appName)
+	assert.Equal(t, "namespace-test", subSystemName)
+
+	appName, subSystemName = c.getMetadataFromResource(r2)
+	assert.Equal(t, "node-test", appName)
+	assert.Equal(t, "namespace-test", subSystemName)
+
+	appName, subSystemName = c.getMetadataFromResource(r3)
+	assert.Equal(t, "application", appName)
+	assert.Equal(t, "subsystem", subSystemName)
+}
+
+func TestCreateExportersWithBatcher(t *testing.T) {
+	factory := NewFactory()
+	cfg := factory.CreateDefaultConfig().(*Config)
+	cfg.Domain = "localhost"
+	cfg.PrivateKey = "test-key"
+	cfg.AppName = "test-app"
+	cfg.BatcherConfig.Enabled = true
+	cfg.BatcherConfig.FlushTimeout = 1 * time.Second
+	cfg.BatcherConfig.MinSize = 100
+
+	// Test traces exporter
+	t.Run("traces_with_batcher", func(t *testing.T) {
+		set := exportertest.NewNopSettings(metadata.Type)
+		exp, err := factory.CreateTraces(context.Background(), set, cfg)
+		require.NoError(t, err)
+		require.NotNil(t, exp)
+	})
+
+	// Test metrics exporter
+	t.Run("metrics_with_batcher", func(t *testing.T) {
+		set := exportertest.NewNopSettings(metadata.Type)
+		exp, err := factory.CreateMetrics(context.Background(), set, cfg)
+		require.NoError(t, err)
+		require.NotNil(t, exp)
+	})
+
+	// Test logs exporter
+	t.Run("logs_with_batcher", func(t *testing.T) {
+		set := exportertest.NewNopSettings(metadata.Type)
+		exp, err := factory.CreateLogs(context.Background(), set, cfg)
+		require.NoError(t, err)
+		require.NotNil(t, exp)
+	})
 }

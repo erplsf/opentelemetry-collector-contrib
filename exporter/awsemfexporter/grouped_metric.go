@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package awsemfexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awsemfexporter"
 
@@ -33,25 +22,41 @@ type groupedMetric struct {
 
 // metricInfo defines value and unit for OT Metrics
 type metricInfo struct {
-	value interface{}
+	value any
 	unit  string
 }
 
 // addToGroupedMetric processes OT metrics and adds them into GroupedMetric buckets
-func addToGroupedMetric(pmd pmetric.Metric, groupedMetrics map[interface{}]*groupedMetric, metadata cWMetricMetadata, patternReplaceSucceeded bool, logger *zap.Logger, descriptor map[string]MetricDescriptor, config *Config) error {
-
-	dps := getDataPoints(pmd, metadata, logger)
+func addToGroupedMetric(
+	pmd pmetric.Metric,
+	groupedMetrics map[any]*groupedMetric,
+	metadata cWMetricMetadata,
+	patternReplaceSucceeded bool,
+	descriptor map[string]MetricDescriptor,
+	config *Config,
+	calculators *emfCalculators,
+) error {
+	dps := getDataPoints(pmd, metadata, config.logger)
 	if dps == nil || dps.Len() == 0 {
 		return nil
 	}
 
 	for i := 0; i < dps.Len(); i++ {
-		dps, retained := dps.CalculateDeltaDatapoints(i, metadata.instrumentationScopeName, config.DetailedMetrics)
+		// Drop stale or NaN metric values
+		if isStaleNanInf, attrs := dps.IsStaleNaNInf(i); isStaleNanInf {
+			if config != nil && config.logger != nil {
+				config.logger.Debug("dropped metric with nan value",
+					zap.String("metric.name", pmd.Name()),
+					zap.Any("metric.attributes", attrs))
+			}
+			continue
+		}
+		dps, retained := dps.CalculateDeltaDatapoints(i, metadata.instrumentationScopeName, config.DetailedMetrics, calculators)
 		if !retained {
 			continue
 		}
 
-		for _, dp := range dps {
+		for i, dp := range dps {
 			labels := dp.labels
 
 			if metricType, ok := labels["Type"]; ok {
@@ -81,11 +86,12 @@ func addToGroupedMetric(pmd pmetric.Metric, groupedMetrics map[interface{}]*grou
 			}
 
 			// Extra params to use when grouping metrics
+			metadata.groupedMetricMetadata.batchIndex = i
 			groupKey := aws.NewKey(metadata.groupedMetricMetadata, labels)
 			if _, ok := groupedMetrics[groupKey]; ok {
 				// if MetricName already exists in metrics map, print warning log
 				if _, ok := groupedMetrics[groupKey].metrics[dp.name]; ok {
-					logger.Warn(
+					config.logger.Warn(
 						"Duplicate metric found",
 						zap.String("Name", dp.name),
 						zap.Any("Labels", labels),
@@ -101,7 +107,6 @@ func addToGroupedMetric(pmd pmetric.Metric, groupedMetrics map[interface{}]*grou
 				}
 			}
 		}
-
 	}
 	return nil
 }
@@ -188,6 +193,11 @@ func translateUnit(metric pmetric.Metric, descriptor map[string]MetricDescriptor
 		}
 	}
 	switch unit {
+	case "1":
+		unit = ""
+	case "ns":
+		// CloudWatch doesn't support Nanoseconds
+		unit = ""
 	case "ms":
 		unit = "Milliseconds"
 	case "s":
@@ -196,7 +206,7 @@ func translateUnit(metric pmetric.Metric, descriptor map[string]MetricDescriptor
 		unit = "Microseconds"
 	case "By":
 		unit = "Bytes"
-	case "Bi":
+	case "bit":
 		unit = "Bits"
 	}
 	return unit

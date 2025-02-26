@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package lokireceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/lokireceiver"
 
@@ -19,6 +8,7 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,6 +24,7 @@ import (
 	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/confignet"
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -43,6 +34,7 @@ import (
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/testutil"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/lokireceiver/internal/metadata"
 )
 
 func sendToCollector(endpoint string, contentType string, contentEncoding string, body []byte) error {
@@ -76,7 +68,7 @@ func sendToCollector(endpoint string, contentType string, contentEncoding string
 		}
 	}
 
-	req, err := http.NewRequest("POST", endpoint, &buf)
+	req, err := http.NewRequest(http.MethodPost, endpoint, &buf)
 	if err != nil {
 		return err
 	}
@@ -99,10 +91,10 @@ func sendToCollector(endpoint string, contentType string, contentEncoding string
 func startGRPCServer(t *testing.T) (*grpc.ClientConn, *consumertest.LogsSink) {
 	config := &Config{
 		Protocols: Protocols{
-			GRPC: &configgrpc.GRPCServerSettings{
-				NetAddr: confignet.NetAddr{
+			GRPC: &configgrpc.ServerConfig{
+				NetAddr: confignet.AddrConfig{
 					Endpoint:  testutil.GetAvailableLocalAddress(t),
-					Transport: "tcp",
+					Transport: confignet.TransportTypeTCP,
 				},
 			},
 		},
@@ -110,14 +102,14 @@ func startGRPCServer(t *testing.T) (*grpc.ClientConn, *consumertest.LogsSink) {
 	}
 	sink := new(consumertest.LogsSink)
 
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	lr, err := newLokiReceiver(config, sink, set)
 	require.NoError(t, err)
 
 	require.NoError(t, lr.Start(context.Background(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, lr.Shutdown(context.Background())) })
 
-	conn, err := grpc.Dial(config.GRPC.NetAddr.Endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.NewClient(config.GRPC.NetAddr.Endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	return conn, sink
 }
@@ -126,7 +118,7 @@ func startHTTPServer(t *testing.T) (string, *consumertest.LogsSink) {
 	addr := testutil.GetAvailableLocalAddress(t)
 	config := &Config{
 		Protocols: Protocols{
-			HTTP: &confighttp.HTTPServerSettings{
+			HTTP: &confighttp.ServerConfig{
 				Endpoint: addr,
 			},
 		},
@@ -134,7 +126,7 @@ func startHTTPServer(t *testing.T) (string, *consumertest.LogsSink) {
 	}
 	sink := new(consumertest.LogsSink)
 
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	lr, err := newLokiReceiver(config, sink, set)
 	require.NoError(t, err)
 
@@ -154,7 +146,7 @@ func TestSendingProtobufPushRequestToHTTPEndpoint(t *testing.T) {
 		err             error
 	}{
 		{
-			name:            "Sending contentEncoding=\"\" contentType=application/x-protobuf to http endpoint",
+			name:            "Sending contentEncoding=\"snappy\" contentType=application/x-protobuf to http endpoint",
 			contentEncoding: "snappy",
 			contentType:     pbContentType,
 			body: &push.PushRequest{
@@ -173,7 +165,7 @@ func TestSendingProtobufPushRequestToHTTPEndpoint(t *testing.T) {
 			expected: generateLogs([]Log{
 				{
 					Timestamp: 1676888496000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 1"),
@@ -219,14 +211,14 @@ func TestSendingPushRequestToHTTPEndpoint(t *testing.T) {
 			expected: generateLogs([]Log{
 				{
 					Timestamp: 1676888496000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 1"),
 				},
 				{
 					Timestamp: 1676888497000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 2"),
@@ -242,14 +234,14 @@ func TestSendingPushRequestToHTTPEndpoint(t *testing.T) {
 			expected: generateLogs([]Log{
 				{
 					Timestamp: 1676888496000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 1"),
 				},
 				{
 					Timestamp: 1676888497000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 2"),
@@ -265,14 +257,14 @@ func TestSendingPushRequestToHTTPEndpoint(t *testing.T) {
 			expected: generateLogs([]Log{
 				{
 					Timestamp: 1676888496000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 1"),
 				},
 				{
 					Timestamp: 1676888497000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 2"),
@@ -288,14 +280,14 @@ func TestSendingPushRequestToHTTPEndpoint(t *testing.T) {
 			expected: generateLogs([]Log{
 				{
 					Timestamp: 1676888496000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 1"),
 				},
 				{
 					Timestamp: 1676888497000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 2"),
@@ -352,7 +344,7 @@ func TestSendingPushRequestToGRPCEndpoint(t *testing.T) {
 			expected: generateLogs([]Log{
 				{
 					Timestamp: 1676888496000000000,
-					Attributes: map[string]interface{}{
+					Attributes: map[string]any{
 						"foo": "bar",
 					},
 					Body: pcommon.NewValueStr("logline 1"),
@@ -373,10 +365,83 @@ func TestSendingPushRequestToGRPCEndpoint(t *testing.T) {
 	}
 }
 
+func TestExpectedStatus(t *testing.T) {
+	testcases := []struct {
+		name              string
+		err               error
+		expectedGrpcError string
+		expectedHTTPError string
+	}{
+		{
+			name:              "permanent-error",
+			err:               consumererror.NewPermanent(errors.New("permanent")),
+			expectedGrpcError: "rpc error: code = Unknown desc = Permanent error: permanent",
+			expectedHTTPError: "failed to upload logs; HTTP status code: 400",
+		},
+		{
+			name:              "non-permanent-error",
+			err:               errors.New("non-permanent"),
+			expectedGrpcError: "rpc error: code = Unavailable desc = non-permanent",
+			expectedHTTPError: "failed to upload logs; HTTP status code: 503",
+		},
+	}
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			httpAddr := testutil.GetAvailableLocalAddress(t)
+			config := &Config{
+				Protocols: Protocols{
+					GRPC: &configgrpc.ServerConfig{
+						NetAddr: confignet.AddrConfig{
+							Endpoint:  testutil.GetAvailableLocalAddress(t),
+							Transport: confignet.TransportTypeTCP,
+						},
+					},
+					HTTP: &confighttp.ServerConfig{
+						Endpoint: httpAddr,
+					},
+				},
+				KeepTimestamp: true,
+			}
+
+			consumer := consumertest.NewErr(tt.err)
+			lr, err := newLokiReceiver(config, consumer, receivertest.NewNopSettings(metadata.Type))
+			require.NoError(t, err)
+
+			require.NoError(t, lr.Start(context.Background(), componenttest.NewNopHost()))
+			t.Cleanup(func() { require.NoError(t, lr.Shutdown(context.Background())) })
+			conn, err := grpc.NewClient(config.GRPC.NetAddr.Endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			require.NoError(t, err)
+			defer conn.Close()
+			grpcClient := push.NewPusherClient(conn)
+
+			body := &push.PushRequest{
+				Streams: []push.Stream{
+					{
+						Labels: "{foo=\"bar\"}",
+						Entries: []push.Entry{
+							{
+								Timestamp: time.Unix(0, 1676888496000000000),
+								Line:      "logline 1",
+							},
+						},
+					},
+				},
+			}
+
+			_, err = grpcClient.Push(context.Background(), body)
+			require.EqualError(t, err, tt.expectedGrpcError)
+
+			_, port, _ := net.SplitHostPort(httpAddr)
+			collectorAddr := fmt.Sprintf("http://localhost:%s/loki/api/v1/push", port)
+			require.EqualError(t, sendToCollector(collectorAddr, "application/json", "", []byte(`{"streams": [{"stream": {"foo": "bar"},"values": [[ "1676888496000000000", "logline 1" ]]}]}`)), tt.expectedHTTPError)
+		})
+	}
+}
+
 type Log struct {
 	Timestamp  int64
 	Body       pcommon.Value
-	Attributes map[string]interface{}
+	Attributes map[string]any
 }
 
 func generateLogs(logs []Log) plog.Logs {

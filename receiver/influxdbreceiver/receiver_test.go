@@ -1,16 +1,5 @@
-// Copyright 2023, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package influxdbreceiver
 
@@ -30,18 +19,19 @@ import (
 	"go.opentelemetry.io/collector/receiver/receivertest"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/testutil"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/influxdbreceiver/internal/metadata"
 )
 
 func TestWriteLineProtocol_v2API(t *testing.T) {
 	addr := testutil.GetAvailableLocalAddress(t)
 	config := &Config{
-		HTTPServerSettings: confighttp.HTTPServerSettings{
+		ServerConfig: confighttp.ServerConfig{
 			Endpoint: addr,
 		},
 	}
 	nextConsumer := new(mockConsumer)
 
-	receiver, outerErr := NewFactory().CreateMetricsReceiver(context.Background(), receivertest.NewNopCreateSettings(), config, nextConsumer)
+	receiver, outerErr := NewFactory().CreateMetrics(context.Background(), receivertest.NewNopSettings(metadata.Type), config, nextConsumer)
 	require.NoError(t, outerErr)
 	require.NotNil(t, receiver)
 
@@ -57,16 +47,16 @@ func TestWriteLineProtocol_v2API(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		batchPoints, err := influxdb1.NewBatchPoints(influxdb1.BatchPointsConfig{})
+		batchPoints, err := influxdb1.NewBatchPoints(influxdb1.BatchPointsConfig{Precision: "µs"})
 		require.NoError(t, err)
-		point, err := influxdb1.NewPoint("cpu_temp", map[string]string{"foo": "bar"}, map[string]interface{}{"gauge": 87.332})
+		point, err := influxdb1.NewPoint("cpu_temp", map[string]string{"foo": "bar"}, map[string]any{"gauge": 87.332})
 		require.NoError(t, err)
 		batchPoints.AddPoint(point)
 		err = client.Write(batchPoints)
 		require.NoError(t, err)
 
 		metrics := nextConsumer.lastMetricsConsumed
-		if assert.NotNil(t, metrics) && assert.Less(t, 0, metrics.DataPointCount()) {
+		if assert.NotNil(t, metrics) && assert.Positive(t, metrics.DataPointCount()) {
 			assert.Equal(t, 1, metrics.MetricCount())
 			metric := metrics.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
 			assert.Equal(t, "cpu_temp", metric.Name())
@@ -79,14 +69,16 @@ func TestWriteLineProtocol_v2API(t *testing.T) {
 	t.Run("influxdb-client-v2", func(t *testing.T) {
 		nextConsumer.lastMetricsConsumed = pmetric.NewMetrics()
 
-		client := influxdb2.NewClient("http://"+addr, "")
+		o := influxdb2.DefaultOptions()
+		o.SetPrecision(time.Microsecond)
+		client := influxdb2.NewClientWithOptions("http://"+addr, "", o)
 		t.Cleanup(client.Close)
 
 		err := client.WriteAPIBlocking("my-org", "my-bucket").WriteRecord(context.Background(), "cpu_temp,foo=bar gauge=87.332")
 		require.NoError(t, err)
 
 		metrics := nextConsumer.lastMetricsConsumed
-		if assert.NotNil(t, metrics) && assert.Less(t, 0, metrics.DataPointCount()) {
+		if assert.NotNil(t, metrics) && assert.Positive(t, metrics.DataPointCount()) {
 			assert.Equal(t, 1, metrics.MetricCount())
 			metric := metrics.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
 			assert.Equal(t, "cpu_temp", metric.Name())
@@ -105,7 +97,7 @@ func (m *mockConsumer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
-func (m *mockConsumer) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
+func (m *mockConsumer) ConsumeMetrics(_ context.Context, md pmetric.Metrics) error {
 	m.lastMetricsConsumed = pmetric.NewMetrics()
 	md.CopyTo(m.lastMetricsConsumed)
 	return nil

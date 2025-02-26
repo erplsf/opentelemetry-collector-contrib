@@ -1,6 +1,6 @@
 ## `noop` operator
 
-The `noop` operator makes no changes to a entry. It is sometimes useful as a terminal node in [non-linear pipelines](../types/pipeline.md#non-linear-pipelines).
+The `noop` operator makes no changes to a entry. It is sometimes useful as a terminal node in [non-linear pipelines](../types/operators.md#non-linear-sequences).
 
 ### Configuration Fields
 
@@ -30,4 +30,4 @@ operators:
 
 #### Why is this necessary?
 
-The last operator is always responsible for emitting logs from the receiver. In non-linear pipelines, it is sometimes necessary to explictly direct logs to the final operator. In many such cases, the final operator performs some work. However, if no more work is required, the `noop` operator can serve as a final operator.
+The last operator is always responsible for emitting logs from the receiver. In non-linear pipelines, it is sometimes necessary to explicitly direct logs to the final operator. In many such cases, the final operator performs some work. However, if no more work is required, the `noop` operator can serve as a final operator.

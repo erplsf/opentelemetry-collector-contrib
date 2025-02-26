@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package receivercreator // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/receivercreator"
 
@@ -23,21 +12,23 @@ import (
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/sharedcomponent"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/receivercreator/internal/metadata"
 )
 
 // This file implements factory for receiver_creator. A receiver_creator can create other receivers at runtime.
 
-const (
-	typeStr   = "receiver_creator"
-	stability = component.StabilityLevelBeta
-)
+var receivers = sharedcomponent.NewSharedComponents()
 
 // NewFactory creates a factory for receiver creator.
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
-		typeStr,
+		metadata.Type,
 		createDefaultConfig,
-		receiver.WithMetrics(createMetricsReceiver, stability))
+		receiver.WithLogs(createLogsReceiver, metadata.LogsStability),
+		receiver.WithMetrics(createMetricsReceiver, metadata.MetricsStability),
+		receiver.WithTraces(createTracesReceiver, metadata.TracesStability),
+	)
 }
 
 func createDefaultConfig() component.Config {
@@ -48,10 +39,24 @@ func createDefaultConfig() component.Config {
 				conventions.AttributeK8SPodUID:        "`uid`",
 				conventions.AttributeK8SNamespaceName: "`namespace`",
 			},
+			observer.K8sServiceType: map[string]string{
+				conventions.AttributeK8SNamespaceName: "`namespace`",
+			},
+			observer.K8sIngressType: map[string]string{
+				conventions.AttributeK8SNamespaceName: "`namespace`",
+			},
 			observer.PortType: map[string]string{
 				conventions.AttributeK8SPodName:       "`pod.name`",
 				conventions.AttributeK8SPodUID:        "`pod.uid`",
 				conventions.AttributeK8SNamespaceName: "`pod.namespace`",
+			},
+			observer.PodContainerType: map[string]string{
+				conventions.AttributeK8SPodName:         "`pod.name`",
+				conventions.AttributeK8SPodUID:          "`pod.uid`",
+				conventions.AttributeK8SNamespaceName:   "`pod.namespace`",
+				conventions.AttributeK8SContainerName:   "`container_name`",
+				conventions.AttributeContainerID:        "`container_id`",
+				conventions.AttributeContainerImageName: "`container_image`",
 			},
 			observer.ContainerType: map[string]string{
 				conventions.AttributeContainerName:      "`name`",
@@ -66,11 +71,41 @@ func createDefaultConfig() component.Config {
 	}
 }
 
+func createLogsReceiver(
+	_ context.Context,
+	params receiver.Settings,
+	cfg component.Config,
+	consumer consumer.Logs,
+) (receiver.Logs, error) {
+	r := receivers.GetOrAdd(cfg, func() component.Component {
+		return newReceiverCreator(params, cfg.(*Config))
+	})
+	r.Component.(*receiverCreator).nextLogsConsumer = consumer
+	return r, nil
+}
+
 func createMetricsReceiver(
-	ctx context.Context,
-	params receiver.CreateSettings,
+	_ context.Context,
+	params receiver.Settings,
 	cfg component.Config,
 	consumer consumer.Metrics,
 ) (receiver.Metrics, error) {
-	return newReceiverCreator(params, cfg.(*Config), consumer)
+	r := receivers.GetOrAdd(cfg, func() component.Component {
+		return newReceiverCreator(params, cfg.(*Config))
+	})
+	r.Component.(*receiverCreator).nextMetricsConsumer = consumer
+	return r, nil
+}
+
+func createTracesReceiver(
+	_ context.Context,
+	params receiver.Settings,
+	cfg component.Config,
+	consumer consumer.Traces,
+) (receiver.Traces, error) {
+	r := receivers.GetOrAdd(cfg, func() component.Component {
+		return newReceiverCreator(params, cfg.(*Config))
+	})
+	r.Component.(*receiverCreator).nextTracesConsumer = consumer
+	return r, nil
 }

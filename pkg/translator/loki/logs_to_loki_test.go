@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package loki // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/loki"
 
@@ -29,9 +18,10 @@ import (
 
 func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 	tests := []struct {
-		name     string
-		logs     plog.Logs
-		expected map[string]PushRequest
+		name                 string
+		logs                 plog.Logs
+		expected             map[string]PushRequest
+		defaultLabelsEnabled map[string]bool
 	}{
 		{
 			name: "tenant from logs attributes",
@@ -58,12 +48,13 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 					PushRequest: &push.PushRequest{
 						Streams: []push.Stream{
 							{
-								Labels: `{exporter="OTLP", tenant_id="1"}`,
+								Labels: `{exporter="OTLP"}`,
 								Entries: []push.Entry{
 									{
-										Line: `{"attributes":{"http.status":200}}`,
+										Line: `{"attributes":{"http.status":200,"tenant.id":"1"}}`,
 									},
-								}},
+								},
+							},
 						},
 					},
 				},
@@ -71,10 +62,10 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 					PushRequest: &push.PushRequest{
 						Streams: []push.Stream{
 							{
-								Labels: `{exporter="OTLP", tenant_id="2"}`,
+								Labels: `{exporter="OTLP"}`,
 								Entries: []push.Entry{
 									{
-										Line: `{"attributes":{"http.status":200}}`,
+										Line: `{"attributes":{"http.status":200,"tenant.id":"2"}}`,
 									},
 								},
 							},
@@ -110,12 +101,13 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 					PushRequest: &push.PushRequest{
 						Streams: []push.Stream{
 							{
-								Labels: `{exporter="OTLP", tenant_id="11"}`,
+								Labels: `{exporter="OTLP"}`,
 								Entries: []push.Entry{
 									{
-										Line: `{"attributes":{"http.status":200}}`,
+										Line: `{"attributes":{"http.status":200},"resources":{"tenant.id":"11"}}`,
 									},
-								}},
+								},
+							},
 						},
 					},
 				},
@@ -123,10 +115,10 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 					PushRequest: &push.PushRequest{
 						Streams: []push.Stream{
 							{
-								Labels: `{exporter="OTLP", tenant_id="12"}`,
+								Labels: `{exporter="OTLP"}`,
 								Entries: []push.Entry{
 									{
-										Line: `{"attributes":{"http.status":200}}`,
+										Line: `{"attributes":{"http.status":200},"resources":{"tenant.id":"12"}}`,
 									},
 								},
 							},
@@ -158,7 +150,8 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 									{
 										Line: `{"attributes":{"http.status":200}}`,
 									},
-								}},
+								},
+							},
 						},
 					},
 				},
@@ -196,12 +189,13 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 					PushRequest: &push.PushRequest{
 						Streams: []push.Stream{
 							{
-								Labels: `{exporter="OTLP", tenant_id="21"}`,
+								Labels: `{exporter="OTLP"}`,
 								Entries: []push.Entry{
 									{
-										Line: `{"attributes":{"http.status":200}}`,
+										Line: `{"attributes":{"http.status":200,"tenant.id":"31"},"resources":{"tenant.id":"21"}}`,
 									},
-								}},
+								},
+							},
 						},
 					},
 				},
@@ -209,10 +203,10 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 					PushRequest: &push.PushRequest{
 						Streams: []push.Stream{
 							{
-								Labels: `{exporter="OTLP", tenant_id="22"}`,
+								Labels: `{exporter="OTLP"}`,
 								Entries: []push.Entry{
 									{
-										Line: `{"attributes":{"http.status":200}}`,
+										Line: `{"attributes":{"http.status":200,"tenant.id":"32"},"resources":{"tenant.id":"22"}}`,
 									},
 								},
 							},
@@ -224,11 +218,11 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requests := LogsToLokiRequests(tt.logs)
+			requests := LogsToLokiRequests(tt.logs, tt.defaultLabelsEnabled)
 
 			for tenant, request := range requests {
 				want, ok := tt.expected[tenant]
-				assert.Equal(t, ok, true)
+				assert.True(t, ok)
 
 				streams := request.Streams
 				for s := 0; s < len(streams); s++ {
@@ -247,22 +241,23 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 
 func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 	testCases := []struct {
-		desc           string
-		hints          map[string]interface{}
-		attrs          map[string]interface{}
-		res            map[string]interface{}
-		severity       plog.SeverityNumber
-		levelAttribute string
-		expectedLabel  string
-		expectedLines  []string
+		desc                 string
+		hints                map[string]any
+		attrs                map[string]any
+		res                  map[string]any
+		severity             plog.SeverityNumber
+		levelAttribute       string
+		expectedLabel        string
+		expectedLines        []string
+		defaultLebelsEnabled map[string]bool
 	}{
 		{
 			desc: "with attribute to label and regular attribute",
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				"host.name":   "guarana",
 				"http.status": 200,
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintAttributes: "host.name",
 			},
 			expectedLabel: `{exporter="OTLP", host_name="guarana"}`,
@@ -274,11 +269,11 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 		},
 		{
 			desc: "with resource to label and regular resource",
-			res: map[string]interface{}{
+			res: map[string]any{
 				"host.name": "guarana",
 				"region.az": "eu-west-1a",
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintResources: "host.name",
 			},
 			expectedLabel: `{exporter="OTLP", host_name="guarana"}`,
@@ -290,11 +285,11 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 		},
 		{
 			desc: "with logfmt format",
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				"host.name":   "guarana",
 				"http.status": 200,
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintAttributes: "host.name",
 				hintFormat:     formatLogfmt,
 			},
@@ -316,6 +311,19 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 			},
 		},
 		{
+			desc:     "with severity to label, but default_labels_enable disables level label",
+			severity: plog.SeverityNumberDebug4,
+			defaultLebelsEnabled: map[string]bool{
+				levelLabel: false,
+			},
+			expectedLabel: `{exporter="OTLP"}`,
+			expectedLines: []string{
+				`{"traceid":"01000000000000000000000000000000"}`,
+				`{"traceid":"02000000000000000000000000000000"}`,
+				`{"traceid":"03000000000000000000000000000000"}`,
+			},
+		},
+		{
 			desc:           "with severity, already existing level",
 			severity:       plog.SeverityNumberDebug4,
 			levelAttribute: "dummy",
@@ -327,16 +335,90 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 			},
 		},
 		{
+			desc:           "with severity, already existing level, but default_labels_enable disables level label",
+			severity:       plog.SeverityNumberDebug4,
+			levelAttribute: "dummy",
+			defaultLebelsEnabled: map[string]bool{
+				levelLabel: false,
+			},
+			expectedLabel: `{exporter="OTLP"}`,
+			expectedLines: []string{
+				`{"traceid":"01000000000000000000000000000000","attributes":{"level":"dummy"}}`,
+				`{"traceid":"02000000000000000000000000000000","attributes":{"level":"dummy"}}`,
+				`{"traceid":"03000000000000000000000000000000","attributes":{"level":"dummy"}}`,
+			},
+		},
+		{
 			desc: "with severity, already existing level and hint attribute",
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				"host.name": "guarana",
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintAttributes: "host.name",
 			},
 			severity:       plog.SeverityNumberDebug4,
 			levelAttribute: "dummy",
 			expectedLabel:  `{exporter="OTLP", host_name="guarana", level="dummy"}`,
+			expectedLines: []string{
+				`{"traceid":"01000000000000000000000000000000"}`,
+				`{"traceid":"02000000000000000000000000000000"}`,
+				`{"traceid":"03000000000000000000000000000000"}`,
+			},
+		},
+		{
+			desc: "with existing level and hint attributes contain level",
+			attrs: map[string]any{
+				"host.name": "guarana",
+			},
+			hints: map[string]any{
+				hintAttributes: "level, host.name",
+			},
+			levelAttribute: "dummy",
+			expectedLabel:  `{exporter="OTLP", host_name="guarana", level="dummy"}`,
+			expectedLines: []string{
+				`{"traceid":"01000000000000000000000000000000"}`,
+				`{"traceid":"02000000000000000000000000000000"}`,
+				`{"traceid":"03000000000000000000000000000000"}`,
+			},
+		},
+		{
+			desc: "with hint attributes and resource attributes as string",
+			attrs: map[string]any{
+				"host.name": "guarana",
+				"host.ip":   "127.0.0.1",
+			},
+			res: map[string]any{
+				"service.name":      "my-service",
+				"service.namespace": "my-namespace",
+			},
+			hints: map[string]any{
+				hintAttributes: "host.name, host.ip",
+				hintResources:  "service.name, service.namespace",
+			},
+			severity:      plog.SeverityNumberDebug4,
+			expectedLabel: `{exporter="OTLP", host_ip="127.0.0.1", host_name="guarana", job="my-namespace/my-service", level="DEBUG4", service_name="my-service", service_namespace="my-namespace"}`,
+			expectedLines: []string{
+				`{"traceid":"01000000000000000000000000000000"}`,
+				`{"traceid":"02000000000000000000000000000000"}`,
+				`{"traceid":"03000000000000000000000000000000"}`,
+			},
+		},
+		{
+			desc: "with hint attributes as slice",
+			attrs: map[string]any{
+				"host.name": "guarana",
+				"host.ip":   "127.0.0.1",
+			},
+			res: map[string]any{
+				"service.name":      "my-service",
+				"service.namespace": "my-namespace",
+			},
+			hints: map[string]any{
+				hintAttributes: []any{"host.name", "host.ip"},
+				hintResources:  []any{"service.name", "service.namespace"},
+			},
+			severity:      plog.SeverityNumberDebug4,
+			expectedLabel: `{exporter="OTLP", host_ip="127.0.0.1", host_name="guarana", job="my-namespace/my-service", level="DEBUG4", service_name="my-service", service_namespace="my-namespace"}`,
 			expectedLines: []string{
 				`{"traceid":"01000000000000000000000000000000"}`,
 				`{"traceid":"02000000000000000000000000000000"}`,
@@ -357,7 +439,11 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 			}
 
 			if len(tt.res) > 0 {
-				assert.NoError(t, ld.ResourceLogs().At(0).Resource().Attributes().FromRaw(tt.res))
+				res := tt.res
+				if val, ok := tt.hints[hintResources]; ok {
+					res[hintResources] = val
+				}
+				assert.NoError(t, ld.ResourceLogs().At(0).Resource().Attributes().FromRaw(res))
 			}
 
 			rlogs := ld.ResourceLogs()
@@ -367,21 +453,29 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 					logs := slogs.At(j).LogRecords()
 					for k := 0; k < logs.Len(); k++ {
 						log := logs.At(k)
+						attrs := map[string]any{}
 						if len(tt.attrs) > 0 {
-							assert.NoError(t, log.Attributes().FromRaw(tt.attrs))
+							attrs = tt.attrs
 						}
+
 						if len(tt.levelAttribute) > 0 {
-							log.Attributes().PutStr(levelAttributeName, tt.levelAttribute)
+							attrs[levelAttributeName] = tt.levelAttribute
 						}
-						for k, v := range tt.hints {
-							log.Attributes().PutStr(k, fmt.Sprintf("%v", v))
+						if val, ok := tt.hints[hintAttributes]; ok {
+							attrs[hintAttributes] = val
+						}
+						if val, ok := tt.hints[hintFormat]; ok {
+							attrs[hintFormat] = val
+						}
+						if len(attrs) > 0 {
+							assert.NoError(t, log.Attributes().FromRaw(attrs))
 						}
 					}
 				}
 			}
 
 			// test
-			requests := LogsToLokiRequests(ld)
+			requests := LogsToLokiRequests(ld, tt.defaultLebelsEnabled)
 			assert.Len(t, requests, 1)
 			request := requests[""]
 
@@ -400,258 +494,28 @@ func TestLogsToLokiRequestWithoutTenant(t *testing.T) {
 	}
 }
 
-func TestLogsToLoki(t *testing.T) {
-	testCases := []struct {
-		desc                 string
-		hints                map[string]interface{}
-		attrs                map[string]interface{}
-		res                  map[string]interface{}
-		severity             plog.SeverityNumber
-		instrumentationScope *instrumentationScope
-		levelAttribute       string
-		expectedLabel        string
-		expectedLines        []string
-	}{
-		{
-			desc: "with attribute to label and regular attribute",
-			attrs: map[string]interface{}{
-				"host.name":   "guarana",
-				"http.status": 200,
-			},
-			hints: map[string]interface{}{
-				hintAttributes: "host.name",
-			},
-			expectedLabel: `{exporter="OTLP", host.name="guarana"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000","attributes":{"http.status":200}}`,
-				`{"traceid":"01020304050000000000000000000000","attributes":{"http.status":200}}`,
-				`{"traceid":"01020304050600000000000000000000","attributes":{"http.status":200}}`,
-			},
-		},
-		{
-			desc: "with resource to label and regular resource",
-			res: map[string]interface{}{
-				"host.name": "guarana",
-				"region.az": "eu-west-1a",
-			},
-			hints: map[string]interface{}{
-				hintResources: "host.name",
-			},
-			expectedLabel: `{exporter="OTLP", host.name="guarana"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000","resources":{"region.az":"eu-west-1a"}}`,
-				`{"traceid":"01020304050000000000000000000000","resources":{"region.az":"eu-west-1a"}}`,
-				`{"traceid":"01020304050600000000000000000000","resources":{"region.az":"eu-west-1a"}}`,
-			},
-		},
-		{
-			desc: "with logfmt format",
-			res: map[string]interface{}{
-				"host.name": "guarana",
-				"region.az": "eu-west-1a",
-			},
-			hints: map[string]interface{}{
-				hintResources: "host.name",
-				hintFormat:    formatLogfmt,
-			},
-			expectedLabel: `{exporter="OTLP", host.name="guarana"}`,
-			expectedLines: []string{
-				`traceID=01020304000000000000000000000000 resource_region.az=eu-west-1a`,
-				`traceID=01020304050000000000000000000000 resource_region.az=eu-west-1a`,
-				`traceID=01020304050600000000000000000000 resource_region.az=eu-west-1a`,
-			},
-		},
-		{
-			desc:          "with severity to label",
-			severity:      plog.SeverityNumberDebug4,
-			expectedLabel: `{exporter="OTLP", level="DEBUG4"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000"}`,
-				`{"traceid":"01020304050000000000000000000000"}`,
-				`{"traceid":"01020304050600000000000000000000"}`,
-			},
-		},
-		{
-			desc:           "with severity, already existing level",
-			severity:       plog.SeverityNumberDebug4,
-			levelAttribute: "dummy",
-			expectedLabel:  `{exporter="OTLP", level="dummy"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000"}`,
-				`{"traceid":"01020304050000000000000000000000"}`,
-				`{"traceid":"01020304050600000000000000000000"}`,
-			},
-		},
-		{
-			desc: "with instrumentation_scope contains name",
-			instrumentationScope: &instrumentationScope{
-				Name: "example-name",
-			},
-			expectedLabel: `{exporter="OTLP"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000","instrumentation_scope":{"name":"example-name"}}`,
-				`{"traceid":"01020304050000000000000000000000","instrumentation_scope":{"name":"example-name"}}`,
-				`{"traceid":"01020304050600000000000000000000","instrumentation_scope":{"name":"example-name"}}`,
-			},
-		},
-		{
-			desc: "with instrumentation_scope contains name and version",
-			instrumentationScope: &instrumentationScope{
-				Name:    "example-name",
-				Version: "v1",
-			},
-			expectedLabel: `{exporter="OTLP"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000","instrumentation_scope":{"name":"example-name","version":"v1"}}`,
-				`{"traceid":"01020304050000000000000000000000","instrumentation_scope":{"name":"example-name","version":"v1"}}`,
-				`{"traceid":"01020304050600000000000000000000","instrumentation_scope":{"name":"example-name","version":"v1"}}`,
-			},
-		},
-		{
-			desc: "with instrumentation_scope contains only version",
-			instrumentationScope: &instrumentationScope{
-				Version: "v1",
-			},
-			expectedLabel: `{exporter="OTLP"}`,
-			expectedLines: []string{
-				`{"traceid":"01020304000000000000000000000000"}`,
-				`{"traceid":"01020304050000000000000000000000"}`,
-				`{"traceid":"01020304050600000000000000000000"}`,
-			},
-		},
-		{
-			desc: "with instrumentation_scope contains name and with logfmt format",
-			instrumentationScope: &instrumentationScope{
-				Name: "example-name",
-			},
-			hints: map[string]interface{}{
-				hintFormat: formatLogfmt,
-			},
-			expectedLabel: `{exporter="OTLP"}`,
-			expectedLines: []string{
-				`traceID=01020304000000000000000000000000 instrumentation_scope_name=example-name`,
-				`traceID=01020304050000000000000000000000 instrumentation_scope_name=example-name`,
-				`traceID=01020304050600000000000000000000 instrumentation_scope_name=example-name`,
-			},
-		},
-		{
-			desc: "with instrumentation_scope contains name and version with logfmt format",
-			instrumentationScope: &instrumentationScope{
-				Name:    "example-name",
-				Version: "v1",
-			},
-			hints: map[string]interface{}{
-				hintFormat: formatLogfmt,
-			},
-			expectedLabel: `{exporter="OTLP"}`,
-			expectedLines: []string{
-				`traceID=01020304000000000000000000000000 instrumentation_scope_name=example-name instrumentation_scope_version=v1`,
-				`traceID=01020304050000000000000000000000 instrumentation_scope_name=example-name instrumentation_scope_version=v1`,
-				`traceID=01020304050600000000000000000000 instrumentation_scope_name=example-name instrumentation_scope_version=v1`,
-			},
-		},
-		{
-			desc: "with instrumentation_scope contains only version with logfmt format",
-			instrumentationScope: &instrumentationScope{
-				Version: "v1",
-			},
-			hints: map[string]interface{}{
-				hintFormat: formatLogfmt,
-			},
-			expectedLabel: `{exporter="OTLP"}`,
-			expectedLines: []string{
-				`traceID=01020304000000000000000000000000`,
-				`traceID=01020304050000000000000000000000`,
-				`traceID=01020304050600000000000000000000`,
-			},
-		},
-	}
-	for _, tC := range testCases {
-		t.Run(tC.desc, func(t *testing.T) {
-			// prepare
-			ld := plog.NewLogs()
-			ld.ResourceLogs().AppendEmpty()
-			ld.ResourceLogs().At(0).ScopeLogs().AppendEmpty()
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().AppendEmpty()
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().AppendEmpty()
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().AppendEmpty()
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).SetSeverityNumber(tC.severity)
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).SetTraceID(pcommon.TraceID([16]byte{1, 2, 3, 4}))
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).SetSeverityNumber(tC.severity)
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).SetTraceID(pcommon.TraceID([16]byte{1, 2, 3, 4, 5}))
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(2).SetSeverityNumber(tC.severity)
-			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(2).SetTraceID(pcommon.TraceID([16]byte{1, 2, 3, 4, 5, 6}))
-
-			// copy the attributes from the test case to the log entry
-			if len(tC.attrs) > 0 {
-				assert.NoError(t, ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes().FromRaw(tC.attrs))
-				assert.NoError(t, ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).Attributes().FromRaw(tC.attrs))
-				assert.NoError(t, ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(2).Attributes().FromRaw(tC.attrs))
-			}
-			if len(tC.res) > 0 {
-				assert.NoError(t, ld.ResourceLogs().At(0).Resource().Attributes().FromRaw(tC.res))
-			}
-			if len(tC.levelAttribute) > 0 {
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes().PutStr(levelAttributeName, tC.levelAttribute)
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).Attributes().PutStr(levelAttributeName, tC.levelAttribute)
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(2).Attributes().PutStr(levelAttributeName, tC.levelAttribute)
-			}
-
-			if tC.instrumentationScope != nil {
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).Scope().SetName(tC.instrumentationScope.Name)
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).Scope().SetVersion(tC.instrumentationScope.Version)
-			}
-
-			// we can't use copy here, as the value (Value) will be used as string lookup later, so, we need to convert it to string now
-			for k, v := range tC.hints {
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes().PutStr(k, fmt.Sprintf("%v", v))
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1).Attributes().PutStr(k, fmt.Sprintf("%v", v))
-				ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(2).Attributes().PutStr(k, fmt.Sprintf("%v", v))
-			}
-
-			// test
-			pushRequest, report := LogsToLoki(ld)
-			entries := pushRequest.Streams[0].Entries
-
-			var entriesLines []string
-			for i := 0; i < len(entries); i++ {
-				entriesLines = append(entriesLines, entries[i].Line)
-			}
-
-			// actualPushRequest is populated within the test http server, we check it here as assertions are better done at the
-			// end of the test function
-			assert.Empty(t, report.Errors)
-			assert.Equal(t, 0, report.NumDropped)
-			assert.Equal(t, ld.LogRecordCount(), report.NumSubmitted)
-			assert.Len(t, pushRequest.Streams, 1)
-			assert.Equal(t, tC.expectedLabel, pushRequest.Streams[0].Labels)
-			assert.Len(t, entries, ld.LogRecordCount())
-			assert.ElementsMatch(t, tC.expectedLines, entriesLines)
-		})
-	}
-}
-
 func TestLogToLokiEntry(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		timestamp            time.Time
 		severity             plog.SeverityNumber
 		levelAttribute       string
-		res                  map[string]interface{}
-		attrs                map[string]interface{}
-		hints                map[string]interface{}
+		res                  map[string]any
+		attrs                map[string]any
+		hints                map[string]any
 		instrumentationScope *instrumentationScope
 		expected             *PushEntry
 		err                  error
+		defaultLabelsEnabled map[string]bool
 	}{
 		{
 			name:      "with attribute to label and regular attribute",
 			timestamp: time.Unix(0, 1677592916000000000),
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				"host.name":   "guarana",
 				"http.status": 200,
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintAttributes: "host.name",
 			},
 			expected: &PushEntry{
@@ -661,7 +525,7 @@ func TestLogToLokiEntry(t *testing.T) {
 				},
 				Labels: model.LabelSet{
 					"exporter":  "OTLP",
-					"host.name": "guarana",
+					"host_name": "guarana",
 				},
 			},
 			err: nil,
@@ -669,11 +533,11 @@ func TestLogToLokiEntry(t *testing.T) {
 		{
 			name:      "with resource to label and regular resource",
 			timestamp: time.Unix(0, 1677592916000000000),
-			res: map[string]interface{}{
+			res: map[string]any{
 				"host.name": "guarana",
 				"region.az": "eu-west-1a",
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintResources: "host.name",
 			},
 			expected: &PushEntry{
@@ -683,18 +547,18 @@ func TestLogToLokiEntry(t *testing.T) {
 				},
 				Labels: model.LabelSet{
 					"exporter":  "OTLP",
-					"host.name": "guarana",
+					"host_name": "guarana",
 				},
 			},
 		},
 		{
 			name:      "with logfmt format",
 			timestamp: time.Unix(0, 1677592916000000000),
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				"host.name":   "guarana",
 				"http.status": 200,
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintAttributes: "host.name",
 				hintFormat:     formatLogfmt,
 			},
@@ -705,7 +569,7 @@ func TestLogToLokiEntry(t *testing.T) {
 				},
 				Labels: model.LabelSet{
 					"exporter":  "OTLP",
-					"host.name": "guarana",
+					"host_name": "guarana",
 				},
 			},
 		},
@@ -758,9 +622,29 @@ func TestLogToLokiEntry(t *testing.T) {
 			},
 		},
 		{
+			name:      "with instrumentation scope attributes",
+			timestamp: time.Unix(0, 1677592916000000000),
+			instrumentationScope: &instrumentationScope{
+				Name:    "otlp",
+				Version: "v1",
+				Attributes: map[string]any{
+					"foo": "bar",
+				},
+			},
+			expected: &PushEntry{
+				Entry: &push.Entry{
+					Timestamp: time.Unix(0, 1677592916000000000),
+					Line:      `{"instrumentation_scope":{"name":"otlp","version":"v1","attributes":{"foo":"bar"}}}`,
+				},
+				Labels: model.LabelSet{
+					"exporter": "OTLP",
+				},
+			},
+		},
+		{
 			name:      "with unknown format hint",
 			timestamp: time.Unix(0, 1677592916000000000),
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				hintFormat: "my-format",
 			},
 			expected: nil,
@@ -790,6 +674,8 @@ func TestLogToLokiEntry(t *testing.T) {
 			if tt.instrumentationScope != nil {
 				scope.SetName(tt.instrumentationScope.Name)
 				scope.SetVersion(tt.instrumentationScope.Version)
+				err = scope.Attributes().FromRaw(tt.instrumentationScope.Attributes)
+				require.NoError(t, err)
 			}
 
 			resource := pcommon.NewResource()
@@ -803,7 +689,7 @@ func TestLogToLokiEntry(t *testing.T) {
 				lr.Attributes().PutStr(levelAttributeName, tt.levelAttribute)
 			}
 
-			log, err := LogToLokiEntry(lr, resource, scope)
+			log, err := LogToLokiEntry(lr, resource, scope, tt.defaultLabelsEnabled)
 			assert.Equal(t, tt.err, err)
 			assert.Equal(t, tt.expected, log)
 		})
@@ -813,13 +699,13 @@ func TestLogToLokiEntry(t *testing.T) {
 func TestGetTenantFromTenantHint(t *testing.T) {
 	testCases := []struct {
 		name     string
-		attrs    map[string]interface{}
-		res      map[string]interface{}
+		attrs    map[string]any
+		res      map[string]any
 		expected string
 	}{
 		{
 			name: "tenant in attributes",
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				hintTenant:  "tenant.id",
 				"tenant.id": "1",
 			},
@@ -827,7 +713,7 @@ func TestGetTenantFromTenantHint(t *testing.T) {
 		},
 		{
 			name: "tenant in resources",
-			res: map[string]interface{}{
+			res: map[string]any{
 				hintTenant:  "tenant.id",
 				"tenant.id": "1",
 			},
@@ -835,11 +721,11 @@ func TestGetTenantFromTenantHint(t *testing.T) {
 		},
 		{
 			name: "if tenant set in resources and attributes, the one in resource should win",
-			res: map[string]interface{}{
+			res: map[string]any{
 				hintTenant:  "tenant.id",
 				"tenant.id": "1",
 			},
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				hintTenant:  "tenant.id",
 				"tenant.id": "2",
 			},

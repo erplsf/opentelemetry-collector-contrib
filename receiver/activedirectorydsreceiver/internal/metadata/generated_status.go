@@ -6,7 +6,11 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("active_directory_ds")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/activedirectorydsreceiver"
+)
+
 const (
-	Type      = "activedirectorydsreceiver"
-	Stability = component.StabilityLevelBeta
+	MetricsStability = component.StabilityLevelBeta
 )

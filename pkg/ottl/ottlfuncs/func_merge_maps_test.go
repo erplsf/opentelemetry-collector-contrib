@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package ottlfuncs
 
@@ -25,12 +14,11 @@ import (
 )
 
 func Test_MergeMaps(t *testing.T) {
-
 	input := pcommon.NewMap()
 	input.PutStr("attr1", "value1")
 
-	targetGetter := &ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx pcommon.Map) (interface{}, error) {
+	targetGetter := &ottl.StandardPMapGetter[pcommon.Map]{
+		Getter: func(_ context.Context, tCtx pcommon.Map) (any, error) {
 			return tCtx, nil
 		},
 	}
@@ -43,8 +31,8 @@ func Test_MergeMaps(t *testing.T) {
 	}{
 		{
 			name: "Upsert no conflicting keys",
-			source: ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-				Getter: func(ctx context.Context, _ pcommon.Map) (interface{}, error) {
+			source: ottl.StandardPMapGetter[pcommon.Map]{
+				Getter: func(_ context.Context, _ pcommon.Map) (any, error) {
 					m := pcommon.NewMap()
 					m.PutStr("attr2", "value2")
 					return m, nil
@@ -58,8 +46,8 @@ func Test_MergeMaps(t *testing.T) {
 		},
 		{
 			name: "Upsert conflicting key",
-			source: ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-				Getter: func(ctx context.Context, _ pcommon.Map) (interface{}, error) {
+			source: ottl.StandardPMapGetter[pcommon.Map]{
+				Getter: func(_ context.Context, _ pcommon.Map) (any, error) {
 					m := pcommon.NewMap()
 					m.PutStr("attr1", "value3")
 					m.PutStr("attr2", "value2")
@@ -74,8 +62,8 @@ func Test_MergeMaps(t *testing.T) {
 		},
 		{
 			name: "Insert no conflicting keys",
-			source: ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-				Getter: func(ctx context.Context, _ pcommon.Map) (interface{}, error) {
+			source: ottl.StandardPMapGetter[pcommon.Map]{
+				Getter: func(_ context.Context, _ pcommon.Map) (any, error) {
 					m := pcommon.NewMap()
 					m.PutStr("attr2", "value2")
 					return m, nil
@@ -89,8 +77,8 @@ func Test_MergeMaps(t *testing.T) {
 		},
 		{
 			name: "Insert conflicting key",
-			source: ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-				Getter: func(ctx context.Context, _ pcommon.Map) (interface{}, error) {
+			source: ottl.StandardPMapGetter[pcommon.Map]{
+				Getter: func(_ context.Context, _ pcommon.Map) (any, error) {
 					m := pcommon.NewMap()
 					m.PutStr("attr1", "value3")
 					m.PutStr("attr2", "value2")
@@ -105,8 +93,8 @@ func Test_MergeMaps(t *testing.T) {
 		},
 		{
 			name: "Update no conflicting keys",
-			source: ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-				Getter: func(ctx context.Context, _ pcommon.Map) (interface{}, error) {
+			source: ottl.StandardPMapGetter[pcommon.Map]{
+				Getter: func(_ context.Context, _ pcommon.Map) (any, error) {
 					m := pcommon.NewMap()
 					m.PutStr("attr2", "value2")
 					return m, nil
@@ -119,8 +107,8 @@ func Test_MergeMaps(t *testing.T) {
 		},
 		{
 			name: "Update conflicting key",
-			source: ottl.StandardTypeGetter[pcommon.Map, pcommon.Map]{
-				Getter: func(ctx context.Context, _ pcommon.Map) (interface{}, error) {
+			source: ottl.StandardPMapGetter[pcommon.Map]{
+				Getter: func(_ context.Context, _ pcommon.Map) (any, error) {
 					m := pcommon.NewMap()
 					m.PutStr("attr1", "value3")
 					return m, nil
@@ -137,7 +125,7 @@ func Test_MergeMaps(t *testing.T) {
 			scenarioMap := pcommon.NewMap()
 			input.CopyTo(scenarioMap)
 
-			exprFunc, err := MergeMaps[pcommon.Map](targetGetter, tt.source, tt.strategy)
+			exprFunc, err := mergeMaps[pcommon.Map](targetGetter, tt.source, tt.strategy)
 			assert.NoError(t, err)
 
 			result, err := exprFunc(context.Background(), scenarioMap)
@@ -153,36 +141,36 @@ func Test_MergeMaps(t *testing.T) {
 }
 
 func Test_MergeMaps_bad_target(t *testing.T) {
-	input := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	input := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, tCtx any) (any, error) {
 			return tCtx, nil
 		},
 	}
-	target := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, _ any) (any, error) {
 			return 1, nil
 		},
 	}
 
-	exprFunc, err := MergeMaps[interface{}](target, input, "insert")
+	exprFunc, err := mergeMaps[any](target, input, "insert")
 	assert.NoError(t, err)
 	_, err = exprFunc(nil, input)
 	assert.Error(t, err)
 }
 
 func Test_MergeMaps_bad_input(t *testing.T) {
-	input := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	input := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, _ any) (any, error) {
 			return 1, nil
 		},
 	}
-	target := &ottl.StandardTypeGetter[interface{}, pcommon.Map]{
-		Getter: func(ctx context.Context, tCtx interface{}) (interface{}, error) {
+	target := &ottl.StandardPMapGetter[any]{
+		Getter: func(_ context.Context, tCtx any) (any, error) {
 			return tCtx, nil
 		},
 	}
 
-	exprFunc, err := MergeMaps[interface{}](target, input, "insert")
+	exprFunc, err := mergeMaps[any](target, input, "insert")
 	assert.NoError(t, err)
 	_, err = exprFunc(nil, input)
 	assert.Error(t, err)

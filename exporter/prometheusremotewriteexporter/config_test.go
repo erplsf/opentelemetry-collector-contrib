@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package prometheusremotewriteexporter
 
@@ -25,10 +14,13 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusremotewriteexporter/internal/metadata"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/resourcetotelemetry"
 )
 
@@ -38,20 +30,37 @@ func TestLoadConfig(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 
+	clientConfig := confighttp.NewDefaultClientConfig()
+	clientConfig.Endpoint = "localhost:8888"
+	clientConfig.TLSSetting = configtls.ClientConfig{
+		Config: configtls.Config{
+			CAFile: "/var/lib/mycert.pem", // This is subject to change, but currently I have no idea what else to put here lol
+		},
+		Insecure: false,
+	}
+	clientConfig.ReadBufferSize = 0
+	clientConfig.WriteBufferSize = 512 * 1024
+	clientConfig.Timeout = 5 * time.Second
+	clientConfig.Headers = map[string]configopaque.String{
+		"Prometheus-Remote-Write-Version": "0.1.0",
+		"X-Scope-OrgID":                   "234",
+	}
 	tests := []struct {
 		id           component.ID
 		expected     component.Config
 		errorMessage string
 	}{
 		{
-			id:       component.NewIDWithName(typeStr, ""),
+			id:       component.NewIDWithName(metadata.Type, ""),
 			expected: createDefaultConfig(),
 		},
 		{
-			id: component.NewIDWithName(typeStr, "2"),
+			id: component.NewIDWithName(metadata.Type, "2"),
 			expected: &Config{
-				TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
-				RetrySettings: exporterhelper.RetrySettings{
+				MaxBatchSizeBytes:          3000000,
+				MaxBatchRequestParallelism: toPtr(10),
+				TimeoutSettings:            exporterhelper.NewDefaultTimeoutConfig(),
+				BackOffConfig: configretry.BackOffConfig{
 					Enabled:             true,
 					InitialInterval:     10 * time.Second,
 					MaxInterval:         1 * time.Minute,
@@ -64,23 +73,10 @@ func TestLoadConfig(t *testing.T) {
 					QueueSize:    2000,
 					NumConsumers: 10,
 				},
-				Namespace:      "test-space",
-				ExternalLabels: map[string]string{"key1": "value1", "key2": "value2"},
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "localhost:8888",
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting: configtls.TLSSetting{
-							CAFile: "/var/lib/mycert.pem", // This is subject to change, but currently I have no idea what else to put here lol
-						},
-						Insecure: false,
-					},
-					ReadBufferSize:  0,
-					WriteBufferSize: 512 * 1024,
-					Timeout:         5 * time.Second,
-					Headers: map[string]configopaque.String{
-						"Prometheus-Remote-Write-Version": "0.1.0",
-						"X-Scope-OrgID":                   "234"},
-				},
+				AddMetricSuffixes:           false,
+				Namespace:                   "test-space",
+				ExternalLabels:              map[string]string{"key1": "value1", "key2": "value2"},
+				ClientConfig:                clientConfig,
 				ResourceToTelemetrySettings: resourcetotelemetry.Settings{Enabled: true},
 				TargetInfo: &TargetInfo{
 					Enabled: true,
@@ -89,12 +85,16 @@ func TestLoadConfig(t *testing.T) {
 			},
 		},
 		{
-			id:           component.NewIDWithName(typeStr, "negative_queue_size"),
+			id:           component.NewIDWithName(metadata.Type, "negative_queue_size"),
 			errorMessage: "remote write queue size can't be negative",
 		},
 		{
-			id:           component.NewIDWithName(typeStr, "negative_num_consumers"),
+			id:           component.NewIDWithName(metadata.Type, "negative_num_consumers"),
 			errorMessage: "remote write consumer number can't be negative",
+		},
+		{
+			id:           component.NewIDWithName(metadata.Type, "less_than_1_max_batch_request_parallelism"),
+			errorMessage: "max_batch_request_parallelism can't be set to below 1",
 		},
 	}
 
@@ -105,13 +105,13 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
 			if tt.expected == nil {
-				assert.EqualError(t, component.ValidateConfig(cfg), tt.errorMessage)
+				assert.EqualError(t, xconfmap.Validate(cfg), tt.errorMessage)
 				return
 			}
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
@@ -123,9 +123,9 @@ func TestDisabledQueue(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "disabled_queue").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "disabled_queue").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
 	assert.False(t, cfg.(*Config).RemoteWriteQueue.Enabled)
 }
@@ -136,9 +136,13 @@ func TestDisabledTargetInfo(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "disabled_target_info").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "disabled_target_info").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
 	assert.False(t, cfg.(*Config).TargetInfo.Enabled)
+}
+
+func toPtr[T any](val T) *T {
+	return &val
 }

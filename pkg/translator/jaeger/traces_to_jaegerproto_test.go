@@ -1,23 +1,12 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package jaeger
 
 import (
 	"testing"
 
-	"github.com/jaegertracing/jaeger/model"
+	"github.com/jaegertracing/jaeger-idl/model/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -175,7 +164,6 @@ func TestGetTagFromSpanKind(t *testing.T) {
 }
 
 func TestAttributesToJaegerProtoTags(t *testing.T) {
-
 	attributes := pcommon.NewMap()
 	attributes.PutBool("bool-val", true)
 	attributes.PutInt("int-val", 123)
@@ -206,9 +194,9 @@ func TestAttributesToJaegerProtoTags(t *testing.T) {
 			VFloat64: 1.23,
 		},
 		{
-			Key:   "bytes-val",
-			VType: model.ValueType_STRING,
-			VStr:  "AQIDBA==", // base64 encoding of the byte array [1,2,3,4]
+			Key:     "bytes-val",
+			VType:   model.ValueType_BINARY,
+			VBinary: []byte{1, 2, 3, 4},
 		},
 		{
 			Key:   conventions.AttributeServiceName,
@@ -226,17 +214,14 @@ func TestAttributesToJaegerProtoTags(t *testing.T) {
 }
 
 func TestInternalTracesToJaegerProto(t *testing.T) {
-
 	tests := []struct {
 		name string
 		td   ptrace.Traces
 		jb   *model.Batch
-		err  error
 	}{
 		{
 			name: "empty",
 			td:   ptrace.NewTraces(),
-			err:  nil,
 		},
 
 		{
@@ -245,13 +230,11 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 			jb: &model.Batch{
 				Process: generateProtoProcess(),
 			},
-			err: nil,
 		},
 
 		{
 			name: "no-resource-attrs",
 			td:   generateTracesResourceOnlyWithNoAttrs(),
-			err:  nil,
 		},
 
 		{
@@ -265,7 +248,6 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 					generateProtoSpanWithTraceState(),
 				},
 			},
-			err: nil,
 		},
 		{
 			name: "library-info",
@@ -278,7 +260,6 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 					generateProtoSpanWithLibraryInfo("io.opentelemetry.test"),
 				},
 			},
-			err: nil,
 		},
 		{
 			name: "two-spans-child-parent",
@@ -292,7 +273,6 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 					generateProtoChildSpan(),
 				},
 			},
-			err: nil,
 		},
 
 		{
@@ -307,7 +287,6 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 					generateProtoFollowerSpan(),
 				},
 			},
-			err: nil,
 		},
 
 		{
@@ -321,10 +300,10 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 					generateJProtoSpanWithEventAttribute(),
 				},
 			},
-			err: nil,
 		},
 		{
 			name: "a-spans-with-two-parent",
+			td:   generateTracesSpanWithTwoParents(),
 			jb: &model.Batch{
 				Process: &model.Process{
 					ServiceName: tracetranslator.ResourceNoServiceName,
@@ -335,18 +314,16 @@ func TestInternalTracesToJaegerProto(t *testing.T) {
 					generateProtoTwoParentsSpan(),
 				},
 			},
-			td: generateTracesSpanWithTwoParents(),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			jbs, err := ProtoFromTraces(test.td)
-			assert.EqualValues(t, test.err, err)
+			jbs := ProtoFromTraces(test.td)
 			if test.jb == nil {
-				assert.Len(t, jbs, 0)
+				assert.Empty(t, jbs)
 			} else {
-				require.Equal(t, 1, len(jbs))
+				require.Len(t, jbs, 1)
 				assert.EqualValues(t, test.jb, jbs[0])
 			}
 		})
@@ -359,8 +336,7 @@ func TestInternalTracesToJaegerProtoBatchesAndBack(t *testing.T) {
 		"../../../internal/coreinternal/goldendataset/testdata/generated_pict_pairs_spans.txt")
 	assert.NoError(t, err)
 	for _, td := range tds {
-		protoBatches, err := ProtoFromTraces(td)
-		assert.NoError(t, err)
+		protoBatches := ProtoFromTraces(td)
 		tdFromPB, err := ProtoToTraces(protoBatches)
 		assert.NoError(t, err)
 		assert.Equal(t, td.SpanCount(), tdFromPB.SpanCount())
@@ -399,7 +375,7 @@ func BenchmarkInternalTracesToJaegerProto(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		_, err := ProtoFromTraces(td)
-		assert.NoError(b, err)
+		batches := ProtoFromTraces(td)
+		assert.NotEmpty(b, batches)
 	}
 }

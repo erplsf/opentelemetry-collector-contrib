@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package plogtest // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
 
@@ -53,10 +42,65 @@ func (opt ignoreResourceAttributeValue) applyOnLogs(expected, actual plog.Logs) 
 	opt.maskLogsResourceAttributeValue(actual)
 }
 
-func (opt ignoreResourceAttributeValue) maskLogsResourceAttributeValue(metrics plog.Logs) {
-	rls := metrics.ResourceLogs()
+func (opt ignoreResourceAttributeValue) maskLogsResourceAttributeValue(logs plog.Logs) {
+	rls := logs.ResourceLogs()
 	for i := 0; i < rls.Len(); i++ {
 		internal.MaskResourceAttributeValue(rls.At(i).Resource(), opt.attributeName)
+	}
+}
+
+// IgnoreLogRecordAttributeValue is a CompareLogsOption that sets the value of an attribute
+// to empty bytes for every log record
+func IgnoreLogRecordAttributeValue(attributeName string) CompareLogsOption {
+	return ignoreLogRecordAttributeValue{
+		attributeName: attributeName,
+	}
+}
+
+type ignoreLogRecordAttributeValue struct {
+	attributeName string
+}
+
+func (opt ignoreLogRecordAttributeValue) applyOnLogs(expected, actual plog.Logs) {
+	opt.maskLogRecordAttributeValue(expected)
+	opt.maskLogRecordAttributeValue(actual)
+}
+
+func (opt ignoreLogRecordAttributeValue) maskLogRecordAttributeValue(logs plog.Logs) {
+	rls := logs.ResourceLogs()
+	for i := 0; i < logs.ResourceLogs().Len(); i++ {
+		sls := rls.At(i).ScopeLogs()
+		for j := 0; j < sls.Len(); j++ {
+			lrs := sls.At(j).LogRecords()
+			for k := 0; k < lrs.Len(); k++ {
+				lr := lrs.At(k)
+				val, exists := lr.Attributes().Get(opt.attributeName)
+				if exists {
+					val.SetEmptyBytes()
+				}
+			}
+		}
+	}
+}
+
+func IgnoreTimestamp() CompareLogsOption {
+	return compareLogsOptionFunc(func(expected, actual plog.Logs) {
+		now := pcommon.NewTimestampFromTime(time.Now())
+		maskTimestamp(expected, now)
+		maskTimestamp(actual, now)
+	})
+}
+
+func maskTimestamp(logs plog.Logs, ts pcommon.Timestamp) {
+	rls := logs.ResourceLogs()
+	for i := 0; i < logs.ResourceLogs().Len(); i++ {
+		sls := rls.At(i).ScopeLogs()
+		for j := 0; j < sls.Len(); j++ {
+			lrs := sls.At(j).LogRecords()
+			for k := 0; k < lrs.Len(); k++ {
+				lrs.At(k).SetTimestamp(ts)
+			}
+		}
 	}
 }
 

@@ -8,8 +8,8 @@ resourceMetrics:
               aggregationTemporality: 1
               dataPoints:
                 - asInt: "1"
-                  timeUnixNano: "1651783494931319000"
+                  timeUnixNano: "1000000"
             unit: By
         scope:
-          name: otelcol/snmpreceiver
+          name: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/snmpreceiver
           version: latest

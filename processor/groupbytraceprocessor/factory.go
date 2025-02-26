@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package groupbytraceprocessor // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/groupbytraceprocessor"
 
@@ -19,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/processor"
@@ -42,13 +30,10 @@ var (
 
 // NewFactory returns a new factory for the Filter processor.
 func NewFactory() processor.Factory {
-	// TODO: find a more appropriate way to get this done, as we are swallowing the error here
-	_ = view.Register(MetricViews()...)
-
 	return processor.NewFactory(
 		metadata.Type,
 		createDefaultConfig,
-		processor.WithTraces(createTracesProcessor, metadata.Stability))
+		processor.WithTraces(createTracesProcessor, metadata.TracesStability))
 }
 
 // createDefaultConfig creates the default configuration for the processor.
@@ -67,10 +52,10 @@ func createDefaultConfig() component.Config {
 // createTracesProcessor creates a trace processor based on this config.
 func createTracesProcessor(
 	_ context.Context,
-	params processor.CreateSettings,
+	params processor.Settings,
 	cfg component.Config,
-	nextConsumer consumer.Traces) (processor.Traces, error) {
-
+	nextConsumer consumer.Traces,
+) (processor.Traces, error) {
 	oCfg := cfg.(*Config)
 
 	var st storage
@@ -81,8 +66,9 @@ func createTracesProcessor(
 		return nil, errDiscardOrphansNotSupported
 	}
 
+	processor := newGroupByTraceProcessor(params, nextConsumer, *oCfg)
 	// the only supported storage for now
-	st = newMemoryStorage()
-
-	return newGroupByTraceProcessor(params.Logger, st, nextConsumer, *oCfg), nil
+	st = newMemoryStorage(processor.telemetryBuilder)
+	processor.st = st
+	return processor, nil
 }

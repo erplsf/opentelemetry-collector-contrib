@@ -1,16 +1,5 @@
-// Copyright OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package azureblobreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureblobreceiver"
 
@@ -36,7 +25,7 @@ type azureBlobEventHandler struct {
 	tracesDataConsumer       tracesDataConsumer
 	logsContainerName        string
 	tracesContainerName      string
-	eventHubSonnectionString string
+	eventHubConnectionString string
 	hub                      *eventhub.Hub
 	logger                   *zap.Logger
 }
@@ -48,12 +37,11 @@ const (
 )
 
 func (p *azureBlobEventHandler) run(ctx context.Context) error {
-
 	if p.hub != nil {
 		return nil
 	}
 
-	hub, err := eventhub.NewHubFromConnectionString(p.eventHubSonnectionString)
+	hub, err := eventhub.NewHubFromConnectionString(p.eventHubConnectionString)
 	if err != nil {
 		return err
 	}
@@ -76,16 +64,15 @@ func (p *azureBlobEventHandler) run(ctx context.Context) error {
 }
 
 func (p *azureBlobEventHandler) newMessageHandler(ctx context.Context, event *eventhub.Event) error {
-
 	type eventData struct {
 		Topic           string
 		Subject         string
 		EventType       string
 		ID              string
-		Data            map[string]interface{}
+		Data            map[string]any
 		DataVersion     string
 		MetadataVersion string
-		EsventTime      string
+		EventTime       string
 	}
 	var eventDataSlice []eventData
 	marshalErr := json.Unmarshal(event.Data, &eventDataSlice)
@@ -99,7 +86,6 @@ func (p *azureBlobEventHandler) newMessageHandler(ctx context.Context, event *ev
 
 	if eventType == blobCreatedEventType {
 		blobData, err := p.blobClient.readBlob(ctx, containerName, blobName)
-
 		if err != nil {
 			return err
 		}
@@ -123,7 +109,6 @@ func (p *azureBlobEventHandler) newMessageHandler(ctx context.Context, event *ev
 }
 
 func (p *azureBlobEventHandler) close(ctx context.Context) error {
-
 	if p.hub != nil {
 		err := p.hub.Close(ctx)
 		if err != nil {
@@ -142,12 +127,12 @@ func (p *azureBlobEventHandler) setTracesDataConsumer(tracesDataConsumer tracesD
 	p.tracesDataConsumer = tracesDataConsumer
 }
 
-func newBlobEventHandler(eventHubSonnectionString string, logsContainerName string, tracesContainerName string, blobClient blobClient, logger *zap.Logger) *azureBlobEventHandler {
+func newBlobEventHandler(eventHubConnectionString string, logsContainerName string, tracesContainerName string, blobClient blobClient, logger *zap.Logger) *azureBlobEventHandler {
 	return &azureBlobEventHandler{
 		blobClient:               blobClient,
 		logsContainerName:        logsContainerName,
 		tracesContainerName:      tracesContainerName,
-		eventHubSonnectionString: eventHubSonnectionString,
+		eventHubConnectionString: eventHubConnectionString,
 		logger:                   logger,
 	}
 }

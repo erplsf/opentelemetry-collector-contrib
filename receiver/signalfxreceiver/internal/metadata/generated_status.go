@@ -6,7 +6,12 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("signalfx")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/signalfxreceiver"
+)
+
 const (
-	Type      = "signalfxreceiver"
-	Stability = component.StabilityLevelBeta
+	MetricsStability = component.StabilityLevelBeta
+	LogsStability    = component.StabilityLevelBeta
 )

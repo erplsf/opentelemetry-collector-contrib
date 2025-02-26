@@ -1,23 +1,11 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package sshcheckreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/sshcheckreceiver"
 
 import (
 	"context"
 	"errors"
-	"runtime"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -41,9 +29,6 @@ type sshcheckScraper struct {
 // start starts the scraper by creating a new SSH Client on the scraper
 func (s *sshcheckScraper) start(_ context.Context, host component.Host) error {
 	var err error
-	if !supportedOS() {
-		return errWindowsUnsupported
-	}
 	s.Client, err = s.Config.ToClient(host, s.settings)
 	return err
 }
@@ -78,7 +63,7 @@ func (s *sshcheckScraper) scrapeSFTP(now pcommon.Timestamp) error {
 	return err
 }
 
-// timeout chooses the shorter between between a given deadline and timeout
+// timeout chooses the shorter duration between a given deadline and timeout
 func timeout(deadline time.Time, timeout time.Duration) time.Duration {
 	timeToDeadline := time.Until(deadline)
 	if timeToDeadline < timeout {
@@ -91,9 +76,7 @@ func timeout(deadline time.Time, timeout time.Duration) time.Duration {
 // is a bit awkward here, because the SFTP checks are not enabled by default and they would panic on nil
 // ref to the underlying Conn when SSH checks failed.
 func (s *sshcheckScraper) scrape(ctx context.Context) (_ pmetric.Metrics, err error) {
-	var (
-		to time.Duration
-	)
+	var to time.Duration
 	// check cancellation
 	select {
 	case <-ctx.Done():
@@ -135,17 +118,15 @@ func (s *sshcheckScraper) scrape(ctx context.Context) (_ pmetric.Metrics, err er
 		}
 	}
 
-	return s.mb.Emit(), nil
+	rb := s.mb.NewResourceBuilder()
+	rb.SetSSHEndpoint(s.Config.SSHClientSettings.Endpoint)
+	return s.mb.Emit(metadata.WithResource(rb.Emit())), nil
 }
 
-func newScraper(conf *Config, settings receiver.CreateSettings) *sshcheckScraper {
+func newScraper(conf *Config, settings receiver.Settings) *sshcheckScraper {
 	return &sshcheckScraper{
 		Config:   conf,
 		settings: settings.TelemetrySettings,
 		mb:       metadata.NewMetricsBuilder(conf.MetricsBuilderConfig, settings),
 	}
-}
-
-func supportedOS() bool {
-	return !(runtime.GOOS == "windows")
 }

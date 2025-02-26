@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package coralogixexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/coralogixexporter"
 
@@ -21,15 +10,17 @@ import (
 	"runtime"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configgrpc"
 	"go.opentelemetry.io/collector/config/configopaque"
 	exp "go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-func newLogsExporter(cfg component.Config, set exp.CreateSettings) (*logsExporter, error) {
+func newLogsExporter(cfg component.Config, set exp.Settings) (*logsExporter, error) {
 	oCfg := cfg.(*Config)
 
 	if isEmpty(oCfg.Domain) && isEmpty(oCfg.Logs.Endpoint) {
@@ -58,12 +49,12 @@ type logsExporter struct {
 func (e *logsExporter) start(ctx context.Context, host component.Host) (err error) {
 	switch {
 	case !isEmpty(e.config.Logs.Endpoint):
-		if e.clientConn, err = e.config.Logs.ToClientConn(ctx, host, e.settings, grpc.WithUserAgent(e.userAgent)); err != nil {
+		if e.clientConn, err = e.config.Logs.ToClientConn(ctx, host, e.settings, configgrpc.WithGrpcDialOption(grpc.WithUserAgent(e.userAgent))); err != nil {
 			return err
 		}
 	case !isEmpty(e.config.Domain):
 
-		if e.clientConn, err = e.config.getDomainGrpcSettings().ToClientConn(ctx, host, e.settings, grpc.WithUserAgent(e.userAgent)); err != nil {
+		if e.clientConn, err = e.config.getDomainGrpcSettings().ToClientConn(ctx, host, e.settings, configgrpc.WithGrpcDialOption(grpc.WithUserAgent(e.userAgent))); err != nil {
 			return err
 		}
 	}
@@ -89,7 +80,6 @@ func (e *logsExporter) shutdown(context.Context) error {
 }
 
 func (e *logsExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
-
 	rss := ld.ResourceLogs()
 	for i := 0; i < rss.Len(); i++ {
 		resourceLog := rss.At(i)
@@ -98,9 +88,17 @@ func (e *logsExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
 		resourceLog.Resource().Attributes().PutStr(cxSubsystemNameAttrName, subsystem)
 	}
 
-	_, err := e.logExporter.Export(e.enhanceContext(ctx), plogotlp.NewExportRequestFromLogs(ld), e.callOptions...)
+	resp, err := e.logExporter.Export(e.enhanceContext(ctx), plogotlp.NewExportRequestFromLogs(ld), e.callOptions...)
 	if err != nil {
 		return processError(err)
+	}
+
+	partialSuccess := resp.PartialSuccess()
+	if !(partialSuccess.ErrorMessage() == "" && partialSuccess.RejectedLogRecords() == 0) {
+		e.settings.Logger.Error("Partial success response from Coralogix",
+			zap.String("message", partialSuccess.ErrorMessage()),
+			zap.Int64("rejected_log_records", partialSuccess.RejectedLogRecords()),
+		)
 	}
 
 	return nil

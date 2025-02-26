@@ -1,16 +1,5 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package producer_test
 
@@ -36,7 +25,7 @@ type MockKinesisAPI struct {
 	op func(*kinesis.PutRecordsInput) (*kinesis.PutRecordsOutput, error)
 }
 
-func (mka *MockKinesisAPI) PutRecords(ctx context.Context, r *kinesis.PutRecordsInput, optFns ...func(*kinesis.Options)) (*kinesis.PutRecordsOutput, error) {
+func (mka *MockKinesisAPI) PutRecords(_ context.Context, r *kinesis.PutRecordsInput, _ ...func(*kinesis.Options)) (*kinesis.PutRecordsOutput, error) {
 	return mka.op(r)
 }
 
@@ -60,7 +49,7 @@ func HardFailedPutRecordsOperation(r *kinesis.PutRecordsInput) (*kinesis.PutReco
 		&types.ResourceNotFoundException{Message: aws.String("testing incorrect kinesis configuration")}
 }
 
-func TransiantPutRecordsOperation(recoverAfter int) func(_ *kinesis.PutRecordsInput) (*kinesis.PutRecordsOutput, error) {
+func TransientPutRecordsOperation(recoverAfter int) func(_ *kinesis.PutRecordsInput) (*kinesis.PutRecordsOutput, error) {
 	attempt := 0
 	return func(r *kinesis.PutRecordsInput) (*kinesis.PutRecordsOutput, error) {
 		if attempt < recoverAfter {
@@ -85,7 +74,7 @@ func TestBatchedExporter(t *testing.T) {
 	}{
 		{name: "Successful put to kinesis", PutRecordsOP: SuccessfulPutRecordsOperation, shouldErr: false, isPermanent: false},
 		{name: "Invalid kinesis configuration", PutRecordsOP: HardFailedPutRecordsOperation, shouldErr: true, isPermanent: true},
-		{name: "Test throttled kinesis operation", PutRecordsOP: TransiantPutRecordsOperation(2), shouldErr: true, isPermanent: false},
+		{name: "Test throttled kinesis operation", PutRecordsOP: TransientPutRecordsOperation(2), shouldErr: true, isPermanent: false},
 	}
 
 	bt := batch.New()
@@ -94,7 +83,6 @@ func TestBatchedExporter(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			be, err := producer.NewBatcher(
 				SetPutRecordsOperation(tc.PutRecordsOP),

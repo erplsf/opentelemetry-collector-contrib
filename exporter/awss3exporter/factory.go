@@ -1,83 +1,116 @@
-// Copyright 2022 OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package awss3exporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awss3exporter"
 
 import (
 	"context"
+	"fmt"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
-)
 
-const (
-	// The value of "type" key in configuration.
-	typeStr = "awss3"
-	// The stability level of the exporter.
-	stability = component.StabilityLevelAlpha
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/awss3exporter/internal/metadata"
 )
 
 // NewFactory creates a factory for S3 exporter.
 func NewFactory() exporter.Factory {
 	return exporter.NewFactory(
-		typeStr,
+		metadata.Type,
 		createDefaultConfig,
-		exporter.WithTraces(createTracesExporter, stability),
-		exporter.WithLogs(createLogsExporter, stability))
+		exporter.WithTraces(createTracesExporter, metadata.TracesStability),
+		exporter.WithLogs(createLogsExporter, metadata.LogsStability),
+		exporter.WithMetrics(createMetricsExporter, metadata.MetricsStability),
+	)
 }
 
 func createDefaultConfig() component.Config {
-	return &Config{
-		S3Uploader: S3UploaderConfig{
-			Region:      "us-east-1",
-			S3Partition: "minute",
-		},
+	queueCfg := exporterhelper.NewDefaultQueueConfig()
+	queueCfg.Enabled = false
 
+	return &Config{
+		QueueSettings: queueCfg,
+		S3Uploader: S3UploaderConfig{
+			Region:       "us-east-1",
+			S3Partition:  "minute",
+			StorageClass: "STANDARD",
+		},
 		MarshalerName: "otlp_json",
-		logger:        nil,
 	}
 }
 
 func createLogsExporter(ctx context.Context,
-	params exporter.CreateSettings,
-	config component.Config) (exp exporter.Logs, err error) {
-
-	s3Exporter, err := NewS3Exporter(config.(*Config), params)
+	params exporter.Settings,
+	config component.Config,
+) (exporter.Logs, error) {
+	cfg, err := checkAndCastConfig(config)
 	if err != nil {
 		return nil, err
 	}
 
-	return exporterhelper.NewLogsExporter(
-		context.TODO(),
-		params,
+	s3Exporter := newS3Exporter(cfg, "logs", params)
+
+	return exporterhelper.NewLogs(ctx, params,
 		config,
-		s3Exporter.ConsumeLogs)
+		s3Exporter.ConsumeLogs,
+		exporterhelper.WithStart(s3Exporter.start),
+		exporterhelper.WithQueue(cfg.QueueSettings),
+	)
+}
+
+func createMetricsExporter(ctx context.Context,
+	params exporter.Settings,
+	config component.Config,
+) (exporter.Metrics, error) {
+	cfg, err := checkAndCastConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	s3Exporter := newS3Exporter(cfg, "metrics", params)
+
+	if config.(*Config).MarshalerName == SumoIC {
+		return nil, fmt.Errorf("metrics are not supported by sumo_ic output format")
+	}
+
+	return exporterhelper.NewMetrics(ctx, params,
+		config,
+		s3Exporter.ConsumeMetrics,
+		exporterhelper.WithStart(s3Exporter.start),
+		exporterhelper.WithQueue(cfg.QueueSettings),
+	)
 }
 
 func createTracesExporter(ctx context.Context,
-	params exporter.CreateSettings,
-	config component.Config) (exp exporter.Traces, err error) {
-
-	s3Exporter, err := NewS3Exporter(config.(*Config), params)
+	params exporter.Settings,
+	config component.Config,
+) (exporter.Traces, error) {
+	cfg, err := checkAndCastConfig(config)
 	if err != nil {
 		return nil, err
 	}
 
-	return exporterhelper.NewTracesExporter(
-		context.TODO(),
+	s3Exporter := newS3Exporter(cfg, "traces", params)
+
+	if config.(*Config).MarshalerName == SumoIC {
+		return nil, fmt.Errorf("traces are not supported by sumo_ic output format")
+	}
+
+	return exporterhelper.NewTraces(ctx,
 		params,
 		config,
-		s3Exporter.ConsumeTraces)
+		s3Exporter.ConsumeTraces,
+		exporterhelper.WithStart(s3Exporter.start),
+		exporterhelper.WithQueue(cfg.QueueSettings),
+	)
+}
+
+// checkAndCastConfig checks the configuration type and casts it to the S3 exporter Config struct.
+func checkAndCastConfig(c component.Config) (*Config, error) {
+	cfg, ok := c.(*Config)
+	if !ok {
+		return nil, fmt.Errorf("config structure is not of type *awss3exporter.Config")
+	}
+	return cfg, nil
 }

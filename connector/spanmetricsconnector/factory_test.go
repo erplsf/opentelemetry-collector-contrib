@@ -1,21 +1,11 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package spanmetricsconnector
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -23,17 +13,20 @@ import (
 	"go.opentelemetry.io/collector/connector/connectortest"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/spanmetricsconnector/internal/metadata"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/pdatautil"
 )
 
 func TestNewConnector(t *testing.T) {
-	defaultMethod := "GET"
+	defaultMethod := http.MethodGet
 	defaultMethodValue := pcommon.NewValueStr(defaultMethod)
 	for _, tc := range []struct {
 		name                         string
 		durationHistogramBuckets     []time.Duration
 		dimensions                   []Dimension
 		wantDurationHistogramBuckets []float64
-		wantDimensions               []dimension
+		wantDimensions               []pdatautil.Dimension
 	}{
 		{
 			name: "simplest config (use defaults)",
@@ -45,9 +38,9 @@ func TestNewConnector(t *testing.T) {
 				{Name: "http.method", Default: &defaultMethod},
 				{Name: "http.status_code"},
 			},
-			wantDimensions: []dimension{
-				{name: "http.method", value: &defaultMethodValue},
-				{"http.status_code", nil},
+			wantDimensions: []pdatautil.Dimension{
+				{Name: "http.method", Value: &defaultMethodValue},
+				{Name: "http.status_code", Value: nil},
 			},
 		},
 	} {
@@ -55,7 +48,7 @@ func TestNewConnector(t *testing.T) {
 			// Prepare
 			factory := NewFactory()
 
-			creationParams := connectortest.NewNopCreateSettings()
+			creationParams := connectortest.NewNopSettings(metadata.Type)
 			cfg := factory.CreateDefaultConfig().(*Config)
 			cfg.Histogram.Explicit = &ExplicitHistogramConfig{
 				Buckets: tc.durationHistogramBuckets,
@@ -67,7 +60,7 @@ func TestNewConnector(t *testing.T) {
 			smc := traceConnector.(*connectorImp)
 
 			// Verify
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.NotNil(t, smc)
 
 			assert.Equal(t, tc.wantDimensions, smc.dimensions)

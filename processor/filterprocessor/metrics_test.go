@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package filterprocessor
 
@@ -28,24 +17,31 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/processor/processorhelper"
 	"go.opentelemetry.io/collector/processor/processortest"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/goldendataset"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filterconfig"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filtermetric"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filterottl"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter/filterset"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl/contexts/ottlresource"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor/internal/metadata"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor/internal/metadatatest"
 )
 
 type metricNameTest struct {
 	name      string
-	inc       *filtermetric.MatchProperties
-	exc       *filtermetric.MatchProperties
+	inc       *filterconfig.MetricMatchProperties
+	exc       *filterconfig.MetricMatchProperties
 	inMetrics pmetric.Metrics
 	outMN     [][]string // output Metric names per Resource
 }
 
 type metricWithResource struct {
 	metricNames        []string
-	resourceAttributes map[string]interface{}
+	resourceAttributes map[string]any
 }
 
 var (
@@ -80,7 +76,7 @@ var (
 	inMetricForResourceTest = []metricWithResource{
 		{
 			metricNames: []string{"metric1", "metric2"},
-			resourceAttributes: map[string]interface{}{
+			resourceAttributes: map[string]any{
 				"attr1": "attr1/val1",
 				"attr2": "attr2/val2",
 				"attr3": "attr3/val3",
@@ -91,20 +87,20 @@ var (
 	inMetricForTwoResource = []metricWithResource{
 		{
 			metricNames: []string{"metric1", "metric2"},
-			resourceAttributes: map[string]interface{}{
+			resourceAttributes: map[string]any{
 				"attr1": "attr1/val1",
 			},
 		},
 		{
 			metricNames: []string{"metric3", "metric4"},
-			resourceAttributes: map[string]interface{}{
+			resourceAttributes: map[string]any{
 				"attr1": "attr1/val2",
 			},
 		},
 	}
 
-	regexpMetricsFilterProperties = &filtermetric.MatchProperties{
-		MatchType:   filtermetric.Regexp,
+	regexpMetricsFilterProperties = &filterconfig.MetricMatchProperties{
+		MatchType:   filterconfig.MetricRegexp,
 		MetricNames: validFilters,
 	}
 
@@ -140,8 +136,8 @@ var (
 		{
 			name: "includeAndExclude",
 			inc:  regexpMetricsFilterProperties,
-			exc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Strict,
+			exc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricStrict,
 				MetricNames: []string{
 					"prefix_test_match",
 					"test_contains_match",
@@ -165,8 +161,8 @@ var (
 		{
 			name: "includeAndExcludeWithEmptyResourceMetrics",
 			inc:  regexpMetricsFilterProperties,
-			exc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Strict,
+			exc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricStrict,
 				MetricNames: []string{
 					"prefix_test_match",
 					"test_contains_match",
@@ -191,13 +187,13 @@ var (
 		},
 		{
 			name:      "emptyFilterInclude",
-			inc:       &filtermetric.MatchProperties{MatchType: filtermetric.Strict},
+			inc:       &filterconfig.MetricMatchProperties{MatchType: filterconfig.MetricStrict},
 			inMetrics: testResourceMetrics([]metricWithResource{{metricNames: inMetricNames}}),
 			outMN:     [][]string{inMetricNames},
 		},
 		{
 			name:      "emptyFilterExclude",
-			exc:       &filtermetric.MatchProperties{MatchType: filtermetric.Strict},
+			exc:       &filterconfig.MetricMatchProperties{MatchType: filterconfig.MetricStrict},
 			inMetrics: testResourceMetrics([]metricWithResource{{metricNames: inMetricNames}}),
 			outMN:     [][]string{inMetricNames},
 		},
@@ -221,8 +217,8 @@ var (
 		},
 		{
 			name: "excludeNilWithResourceAttributes",
-			exc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Strict,
+			exc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricStrict,
 			},
 			inMetrics: testResourceMetrics(inMetricForResourceTest),
 			outMN: [][]string{
@@ -231,8 +227,8 @@ var (
 		},
 		{
 			name: "includeAllWithResourceAttributes",
-			inc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Strict,
+			inc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricStrict,
 				MetricNames: []string{
 					"metric1",
 					"metric2",
@@ -246,8 +242,8 @@ var (
 		},
 		{
 			name: "includeAllWithMissingResourceAttributes",
-			inc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Strict,
+			inc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricStrict,
 				MetricNames: []string{
 					"metric1",
 					"metric2",
@@ -263,8 +259,8 @@ var (
 		},
 		{
 			name: "excludeAllWithMissingResourceAttributes",
-			exc: &filtermetric.MatchProperties{
-				MatchType:          filtermetric.Strict,
+			exc: &filterconfig.MetricMatchProperties{
+				MatchType:          filterconfig.MetricStrict,
 				ResourceAttributes: []filterconfig.Attribute{{Key: "attr1", Value: "attr1/val1"}},
 			},
 			inMetrics: testResourceMetrics(inMetricForTwoResource),
@@ -274,8 +270,8 @@ var (
 		},
 		{
 			name: "includeWithRegexResourceAttributes",
-			inc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Regexp,
+			inc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricRegexp,
 				MetricNames: []string{
 					".*",
 				},
@@ -288,8 +284,8 @@ var (
 		},
 		{
 			name: "includeWithRegexResourceAttributesOnly",
-			inc: &filtermetric.MatchProperties{
-				MatchType:          filtermetric.Regexp,
+			inc: &filterconfig.MetricMatchProperties{
+				MatchType:          filterconfig.MetricRegexp,
 				ResourceAttributes: []filterconfig.Attribute{{Key: "attr1", Value: "attr1/val1"}},
 			},
 			inMetrics: testResourceMetrics(inMetricForTwoResource),
@@ -299,8 +295,8 @@ var (
 		},
 		{
 			name: "includeWithStrictResourceAttributes",
-			inc: &filtermetric.MatchProperties{
-				MatchType: filtermetric.Strict,
+			inc: &filterconfig.MetricMatchProperties{
+				MatchType: filterconfig.MetricStrict,
 				MetricNames: []string{
 					"metric1",
 					"metric2",
@@ -314,8 +310,8 @@ var (
 		},
 		{
 			name: "includeWithStrictResourceAttributesOnly",
-			inc: &filtermetric.MatchProperties{
-				MatchType:          filtermetric.Strict,
+			inc: &filterconfig.MetricMatchProperties{
+				MatchType:          filterconfig.MetricStrict,
 				ResourceAttributes: []filterconfig.Attribute{{Key: "attr1", Value: "attr1/val1"}},
 			},
 			inMetrics: testResourceMetrics(inMetricForTwoResource),
@@ -338,14 +334,14 @@ func TestFilterMetricProcessor(t *testing.T) {
 				},
 			}
 			factory := NewFactory()
-			fmp, err := factory.CreateMetricsProcessor(
+			fmp, err := factory.CreateMetrics(
 				context.Background(),
-				processortest.NewNopCreateSettings(),
+				processortest.NewNopSettings(metadata.Type),
 				cfg,
 				next,
 			)
 			assert.NotNil(t, fmp)
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 
 			caps := fmp.Capabilities()
 			assert.True(t, caps.MutatesData)
@@ -353,15 +349,15 @@ func TestFilterMetricProcessor(t *testing.T) {
 			assert.NoError(t, fmp.Start(ctx, nil))
 
 			cErr := fmp.ConsumeMetrics(context.Background(), test.inMetrics)
-			assert.Nil(t, cErr)
+			assert.NoError(t, cErr)
 			got := next.AllMetrics()
 
 			if len(test.outMN) == 0 {
-				require.Equal(t, 0, len(got))
+				require.Empty(t, got)
 				return
 			}
 
-			require.Equal(t, 1, len(got))
+			require.Len(t, got, 1)
 			require.Equal(t, len(test.outMN), got[0].ResourceMetrics().Len())
 			for i, wantOut := range test.outMN {
 				gotMetrics := got[0].ResourceMetrics().At(i).ScopeMetrics().At(0).Metrics()
@@ -373,6 +369,38 @@ func TestFilterMetricProcessor(t *testing.T) {
 			assert.NoError(t, fmp.Shutdown(ctx))
 		})
 	}
+}
+
+func TestFilterMetricProcessorTelemetry(t *testing.T) {
+	tel := componenttest.NewTelemetry()
+	cfg := &Config{
+		Metrics: MetricFilters{
+			MetricConditions: []string{
+				"name==\"metric1\"",
+			},
+		},
+	}
+	fmp, err := newFilterMetricProcessor(metadatatest.NewSettings(tel), cfg)
+	assert.NotNil(t, fmp)
+	assert.NoError(t, err)
+
+	_, err = fmp.processMetrics(context.Background(), testResourceMetrics([]metricWithResource{
+		{
+			metricNames: []string{"metric1", "metric2"},
+			resourceAttributes: map[string]any{
+				"attr1": "attr1/val1",
+			},
+		},
+	}))
+	assert.NoError(t, err)
+
+	metadatatest.AssertEqualProcessorFilterDatapointsFiltered(t, tel, []metricdata.DataPoint[int64]{
+		{
+			Value:      1,
+			Attributes: attribute.NewSet(attribute.String("filter", "filter")),
+		},
+	}, metricdatatest.IgnoreTimestamp())
+	require.NoError(t, tel.Shutdown(context.Background()))
 }
 
 func testResourceMetrics(mwrs []metricWithResource) pmetric.Metrics {
@@ -396,7 +424,7 @@ func testResourceMetrics(mwrs []metricWithResource) pmetric.Metrics {
 }
 
 func BenchmarkStrictFilter(b *testing.B) {
-	mp := &filtermetric.MatchProperties{
+	mp := &filterconfig.MetricMatchProperties{
 		MatchType:   "strict",
 		MetricNames: []string{"p10_metric_0"},
 	}
@@ -404,7 +432,7 @@ func BenchmarkStrictFilter(b *testing.B) {
 }
 
 func BenchmarkRegexpFilter(b *testing.B) {
-	mp := &filtermetric.MatchProperties{
+	mp := &filterconfig.MetricMatchProperties{
 		MatchType:   "regexp",
 		MetricNames: []string{"p10_metric_0"},
 	}
@@ -412,14 +440,14 @@ func BenchmarkRegexpFilter(b *testing.B) {
 }
 
 func BenchmarkExprFilter(b *testing.B) {
-	mp := &filtermetric.MatchProperties{
+	mp := &filterconfig.MetricMatchProperties{
 		MatchType:   "expr",
 		Expressions: []string{`MetricName == "p10_metric_0"`},
 	}
 	benchmarkFilter(b, mp)
 }
 
-func benchmarkFilter(b *testing.B, mp *filtermetric.MatchProperties) {
+func benchmarkFilter(b *testing.B, mp *filterconfig.MetricMatchProperties) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 	pcfg := cfg.(*Config)
@@ -427,9 +455,9 @@ func benchmarkFilter(b *testing.B, mp *filtermetric.MatchProperties) {
 		Exclude: mp,
 	}
 	ctx := context.Background()
-	proc, _ := factory.CreateMetricsProcessor(
+	proc, _ := factory.CreateMetrics(
 		ctx,
-		processortest.NewNopCreateSettings(),
+		processortest.NewNopSettings(metadata.Type),
 		cfg,
 		consumertest.NewNop(),
 	)
@@ -499,15 +527,15 @@ func requireNotPanics(t *testing.T, metrics pmetric.Metrics) {
 	cfg := factory.CreateDefaultConfig()
 	pcfg := cfg.(*Config)
 	pcfg.Metrics = MetricFilters{
-		Exclude: &filtermetric.MatchProperties{
+		Exclude: &filterconfig.MetricMatchProperties{
 			MatchType:   "strict",
 			MetricNames: []string{"foo"},
 		},
 	}
 	ctx := context.Background()
-	proc, _ := factory.CreateMetricsProcessor(
+	proc, _ := factory.CreateMetrics(
 		ctx,
-		processortest.NewNopCreateSettings(),
+		processortest.NewNopSettings(metadata.Type),
 		cfg,
 		consumertest.NewNop(),
 	)
@@ -547,7 +575,7 @@ func TestFilterMetricProcessorWithOTTL(t *testing.T) {
 			name: "drop everything by dropping all metrics",
 			conditions: MetricFilters{
 				MetricConditions: []string{
-					`IsMatch(name, "operation.*") == true`,
+					`IsMatch(name, "operation.*")`,
 				},
 			},
 			filterEverything: true,
@@ -711,13 +739,33 @@ func TestFilterMetricProcessorWithOTTL(t *testing.T) {
 					`Substring("", 0, 100) == "test"`,
 				},
 			},
-			want:      func(md pmetric.Metrics) {},
+			want:      func(_ pmetric.Metrics) {},
 			errorMode: ottl.IgnoreError,
+		},
+		{
+			name: "HasAttrOnDatapoint",
+			conditions: MetricFilters{
+				MetricConditions: []string{
+					`HasAttrOnDatapoint("attr1", "test1")`,
+				},
+			},
+			filterEverything: true,
+			errorMode:        ottl.IgnoreError,
+		},
+		{
+			name: "HasAttrKeyOnDatapoint",
+			conditions: MetricFilters{
+				MetricConditions: []string{
+					`HasAttrKeyOnDatapoint("attr1")`,
+				},
+			},
+			filterEverything: true,
+			errorMode:        ottl.IgnoreError,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			processor, err := newFilterMetricProcessor(componenttest.NewNopTelemetrySettings(), &Config{Metrics: tt.conditions, ErrorMode: tt.errorMode})
+			processor, err := newFilterMetricProcessor(processortest.NewNopSettings(metadata.Type), &Config{Metrics: tt.conditions, ErrorMode: tt.errorMode})
 			assert.NoError(t, err)
 
 			got, err := processor.processMetrics(context.Background(), constructMetrics())
@@ -725,7 +773,6 @@ func TestFilterMetricProcessorWithOTTL(t *testing.T) {
 			if tt.filterEverything {
 				assert.Equal(t, processorhelper.ErrSkipProcessingData, err)
 			} else {
-
 				exTd := constructMetrics()
 				tt.want(exTd)
 				assert.Equal(t, exTd, got)
@@ -858,4 +905,181 @@ func fillMetricFive(m pmetric.Metric) {
 	dataPoint1.Attributes().PutStr("attr1", "test1")
 	dataPoint1.Attributes().PutStr("attr2", "test2")
 	dataPoint1.Attributes().PutStr("attr3", "test3")
+}
+
+func Test_ResourceSkipExpr_With_Bridge(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition *filterconfig.MatchConfig
+	}{
+		// resource attributes
+		{
+			name: "single static resource attribute include",
+			condition: &filterconfig.MatchConfig{
+				Include: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Strict,
+					},
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: "svcA",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple static resource attribute include",
+			condition: &filterconfig.MatchConfig{
+				Include: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Strict,
+					},
+
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: "svc2",
+						},
+						{
+							Key:   "service.version",
+							Value: "v1",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "single regex resource attribute include",
+			condition: &filterconfig.MatchConfig{
+				Include: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Regexp,
+					},
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: "svc.*",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple regex resource attribute include",
+			condition: &filterconfig.MatchConfig{
+				Include: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Regexp,
+					},
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: ".*2",
+						},
+						{
+							Key:   "service.name",
+							Value: ".*3",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "single static resource attribute exclude",
+			condition: &filterconfig.MatchConfig{
+				Exclude: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Strict,
+					},
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: "svcA",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple static resource attribute exclude",
+			condition: &filterconfig.MatchConfig{
+				Exclude: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Strict,
+					},
+
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: "svc2",
+						},
+						{
+							Key:   "service.version",
+							Value: "v1",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "single regex resource attribute exclude",
+			condition: &filterconfig.MatchConfig{
+				Exclude: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Regexp,
+					},
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: "svc.*",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple regex resource attribute exclude",
+			condition: &filterconfig.MatchConfig{
+				Exclude: &filterconfig.MatchProperties{
+					Config: filterset.Config{
+						MatchType: filterset.Regexp,
+					},
+					Resources: []filterconfig.Attribute{
+						{
+							Key:   "service.name",
+							Value: ".*2",
+						},
+						{
+							Key:   "service.name",
+							Value: ".*3",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resource := pcommon.NewResource()
+			resource.Attributes().PutStr("test", "test")
+
+			tCtx := ottlresource.NewTransformContext(resource, pmetric.NewResourceMetrics())
+
+			boolExpr, err := newSkipResExpr(filterconfig.CreateMetricMatchPropertiesFromDefault(tt.condition.Include), filterconfig.CreateMetricMatchPropertiesFromDefault(tt.condition.Exclude))
+			require.NoError(t, err)
+			expectedResult, err := boolExpr.Eval(context.Background(), tCtx)
+			assert.NoError(t, err)
+
+			ottlBoolExpr, err := filterottl.NewResourceSkipExprBridge(tt.condition)
+
+			assert.NoError(t, err)
+			ottlResult, err := ottlBoolExpr.Eval(context.Background(), tCtx)
+			assert.NoError(t, err)
+
+			assert.Equal(t, expectedResult, ottlResult)
+		})
+	}
 }

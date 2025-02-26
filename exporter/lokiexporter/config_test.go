@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package lokiexporter
 
@@ -26,12 +15,32 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter/internal/metadata"
 )
 
 func TestLoadConfigNewExporter(t *testing.T) {
+	clientConfig := confighttp.NewDefaultClientConfig()
+	clientConfig.Headers = map[string]configopaque.String{
+		"X-Custom-Header": "loki_rocks",
+	}
+	clientConfig.Endpoint = "https://loki:3100/loki/api/v1/push"
+	clientConfig.TLSSetting = configtls.ClientConfig{
+		Config: configtls.Config{
+			CAFile:   "/var/lib/mycert.pem",
+			CertFile: "certfile",
+			KeyFile:  "keyfile",
+		},
+		Insecure: true,
+	}
+	clientConfig.ReadBufferSize = 123
+	clientConfig.WriteBufferSize = 345
+	clientConfig.Timeout = time.Second * 10
 	t.Parallel()
 
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
@@ -42,26 +51,10 @@ func TestLoadConfigNewExporter(t *testing.T) {
 		expected component.Config
 	}{
 		{
-			id: component.NewIDWithName(typeStr, "allsettings"),
+			id: component.NewIDWithName(metadata.Type, "allsettings"),
 			expected: &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Headers: map[string]configopaque.String{
-						"X-Custom-Header": "loki_rocks",
-					},
-					Endpoint: "https://loki:3100/loki/api/v1/push",
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting: configtls.TLSSetting{
-							CAFile:   "/var/lib/mycert.pem",
-							CertFile: "certfile",
-							KeyFile:  "keyfile",
-						},
-						Insecure: true,
-					},
-					ReadBufferSize:  123,
-					WriteBufferSize: 345,
-					Timeout:         time.Second * 10,
-				},
-				RetrySettings: exporterhelper.RetrySettings{
+				ClientConfig: clientConfig,
+				BackOffConfig: configretry.BackOffConfig{
 					Enabled:             true,
 					InitialInterval:     10 * time.Second,
 					MaxInterval:         1 * time.Minute,
@@ -69,10 +62,16 @@ func TestLoadConfigNewExporter(t *testing.T) {
 					RandomizationFactor: backoff.DefaultRandomizationFactor,
 					Multiplier:          backoff.DefaultMultiplier,
 				},
-				QueueSettings: exporterhelper.QueueSettings{
+				QueueSettings: exporterhelper.QueueConfig{
 					Enabled:      true,
 					NumConsumers: 2,
 					QueueSize:    10,
+				},
+				DefaultLabelsEnabled: map[string]bool{
+					"exporter": false,
+					"job":      true,
+					"instance": true,
+					"level":    false,
 				},
 			},
 		},
@@ -85,15 +84,17 @@ func TestLoadConfigNewExporter(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
 }
 
 func TestConfigValidate(t *testing.T) {
+	clientConfig := confighttp.NewDefaultClientConfig()
+	clientConfig.Endpoint = "https://loki.example.com"
 	testCases := []struct {
 		desc string
 		cfg  *Config
@@ -101,7 +102,7 @@ func TestConfigValidate(t *testing.T) {
 	}{
 		{
 			desc: "QueueSettings are invalid",
-			cfg:  &Config{QueueSettings: exporterhelper.QueueSettings{QueueSize: -1, Enabled: true}},
+			cfg:  &Config{QueueSettings: exporterhelper.QueueConfig{QueueSize: -1, Enabled: true}},
 			err:  fmt.Errorf("queue settings has invalid configuration"),
 		},
 		{
@@ -112,9 +113,7 @@ func TestConfigValidate(t *testing.T) {
 		{
 			desc: "Config is valid",
 			cfg: &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "https://loki.example.com",
-				},
+				ClientConfig: clientConfig,
 			},
 			err: nil,
 		},
@@ -124,8 +123,7 @@ func TestConfigValidate(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			err := tc.cfg.Validate()
 			if tc.err != nil {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.err.Error())
+				assert.ErrorContains(t, err, tc.err.Error())
 			} else {
 				require.NoError(t, err)
 			}

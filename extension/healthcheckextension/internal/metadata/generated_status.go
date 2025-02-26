@@ -6,7 +6,11 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("health_check")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension"
+)
+
 const (
-	Type      = "healthcheck"
-	Stability = component.StabilityLevelBeta
+	ExtensionStability = component.StabilityLevelBeta
 )

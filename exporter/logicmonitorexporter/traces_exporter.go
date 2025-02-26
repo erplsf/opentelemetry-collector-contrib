@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package logicmonitorexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter"
 
@@ -30,10 +19,11 @@ type tracesExporter struct {
 	config   *Config
 	sender   *traces.Sender
 	settings component.TelemetrySettings
+	cancel   context.CancelFunc
 }
 
 // newTracesExporter creates new Logicmonitor Traces Exporter.
-func newTracesExporter(_ context.Context, cfg component.Config, set exporter.CreateSettings) *tracesExporter {
+func newTracesExporter(_ context.Context, cfg component.Config, set exporter.Settings) *tracesExporter {
 	oCfg := cfg.(*Config)
 
 	// client construction is deferred to start
@@ -44,7 +34,7 @@ func newTracesExporter(_ context.Context, cfg component.Config, set exporter.Cre
 }
 
 func (e *tracesExporter) start(ctx context.Context, host component.Host) error {
-	client, err := e.config.HTTPClientSettings.ToClient(host, e.settings)
+	client, err := e.config.ClientConfig.ToClient(ctx, host, e.settings)
 	if err != nil {
 		return fmt.Errorf("failed to create http client: %w", err)
 	}
@@ -54,6 +44,8 @@ func (e *tracesExporter) start(ctx context.Context, host component.Host) error {
 		AccessKey:   string(e.config.APIToken.AccessKey),
 		BearerToken: string(e.config.Headers["Authorization"]),
 	}
+
+	ctx, e.cancel = context.WithCancel(ctx)
 	e.sender, err = traces.NewSender(ctx, e.config.Endpoint, client, authParams, e.settings.Logger)
 	if err != nil {
 		return err
@@ -63,4 +55,12 @@ func (e *tracesExporter) start(ctx context.Context, host component.Host) error {
 
 func (e *tracesExporter) PushTraceData(ctx context.Context, td ptrace.Traces) error {
 	return e.sender.SendTraces(ctx, td)
+}
+
+func (e *tracesExporter) shutdown(_ context.Context) error {
+	if e.cancel != nil {
+		e.cancel()
+	}
+
+	return nil
 }

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package filesystemscraper // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver/internal/scraper/filesystemscraper"
 
@@ -21,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/host"
+	"github.com/shirou/gopsutil/v4/common"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/host"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/receiver"
-	"go.opentelemetry.io/collector/receiver/scrapererror"
+	"go.opentelemetry.io/collector/scraper"
+	"go.opentelemetry.io/collector/scraper/scrapererror"
 	"go.uber.org/zap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/internal/metadata"
@@ -38,17 +28,17 @@ const (
 	metricsLen         = standardMetricsLen + systemSpecificMetricsLen
 )
 
-// scraper for FileSystem Metrics
-type scraper struct {
-	settings receiver.CreateSettings
+// filesystemsScraper for FileSystem Metrics
+type filesystemsScraper struct {
+	settings scraper.Settings
 	config   *Config
 	mb       *metadata.MetricsBuilder
 	fsFilter fsFilter
 
 	// for mocking gopsutil disk.Partitions & disk.Usage
-	bootTime   func() (uint64, error)
-	partitions func(bool) ([]disk.PartitionStat, error)
-	usage      func(string) (*disk.UsageStat, error)
+	bootTime   func(context.Context) (uint64, error)
+	partitions func(context.Context, bool) ([]disk.PartitionStat, error)
+	usage      func(context.Context, string) (*disk.UsageStat, error)
 }
 
 type deviceUsage struct {
@@ -57,18 +47,18 @@ type deviceUsage struct {
 }
 
 // newFileSystemScraper creates a FileSystem Scraper
-func newFileSystemScraper(_ context.Context, settings receiver.CreateSettings, cfg *Config) (*scraper, error) {
+func newFileSystemScraper(_ context.Context, settings scraper.Settings, cfg *Config) (*filesystemsScraper, error) {
 	fsFilter, err := cfg.createFilter()
 	if err != nil {
 		return nil, err
 	}
 
-	scraper := &scraper{settings: settings, config: cfg, bootTime: host.BootTime, partitions: disk.Partitions, usage: disk.Usage, fsFilter: *fsFilter}
+	scraper := &filesystemsScraper{settings: settings, config: cfg, bootTime: host.BootTimeWithContext, partitions: disk.PartitionsWithContext, usage: disk.UsageWithContext, fsFilter: *fsFilter}
 	return scraper, nil
 }
 
-func (s *scraper) start(context.Context, component.Host) error {
-	bootTime, err := s.bootTime()
+func (s *filesystemsScraper) start(ctx context.Context, _ component.Host) error {
+	bootTime, err := s.bootTime(ctx)
 	if err != nil {
 		return err
 	}
@@ -77,11 +67,11 @@ func (s *scraper) start(context.Context, component.Host) error {
 	return nil
 }
 
-func (s *scraper) scrape(_ context.Context) (pmetric.Metrics, error) {
+func (s *filesystemsScraper) scrape(ctx context.Context) (pmetric.Metrics, error) {
 	now := pcommon.NewTimestampFromTime(time.Now())
 
 	var errors scrapererror.ScrapeErrors
-	partitions, err := s.partitions(s.config.IncludeVirtualFS)
+	partitions, err := s.partitions(ctx, s.config.IncludeVirtualFS)
 	if err != nil {
 		if len(partitions) == 0 {
 			return pmetric.NewMetrics(), scrapererror.NewPartialScrapeError(err, metricsLen)
@@ -98,12 +88,28 @@ func (s *scraper) scrape(_ context.Context) (pmetric.Metrics, error) {
 	}
 
 	usages := make([]*deviceUsage, 0, len(partitions))
+
+	type mountKey struct {
+		mountpoint string
+		device     string
+	}
+	seen := map[mountKey]struct{}{}
+
 	for _, partition := range partitions {
+		key := mountKey{
+			mountpoint: partition.Mountpoint,
+			device:     partition.Device,
+		}
+		if _, ok := seen[key]; partition.Mountpoint != "" && ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
 		if !s.fsFilter.includePartition(partition) {
 			continue
 		}
-		translatedMountpoint := translateMountpoint(s.config.RootPath, partition.Mountpoint)
-		usage, usageErr := s.usage(translatedMountpoint)
+		translatedMountpoint := translateMountpoint(ctx, s.config.rootPath, partition.Mountpoint)
+		usage, usageErr := s.usage(ctx, translatedMountpoint)
 		if usageErr != nil {
 			errors.AddPartial(0, fmt.Errorf("failed to read usage at %s: %w", translatedMountpoint, usageErr))
 			continue
@@ -169,6 +175,12 @@ func (f *fsFilter) includeMountPoint(mountPoint string) bool {
 }
 
 // translateMountsRootPath translates a mountpoint from the host perspective to the chrooted perspective.
-func translateMountpoint(rootPath, mountpoint string) string {
+func translateMountpoint(ctx context.Context, rootPath string, mountpoint string) string {
+	if env, ok := ctx.Value(common.EnvKey).(common.EnvMap); ok {
+		mountInfo := env[common.EnvKeyType("HOST_PROC_MOUNTINFO")]
+		if mountInfo != "" {
+			return mountpoint
+		}
+	}
 	return filepath.Join(rootPath, mountpoint)
 }

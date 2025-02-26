@@ -1,16 +1,5 @@
-// Copyright 2019, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package splunkhecreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/splunkhecreceiver"
 
@@ -21,7 +10,7 @@ import (
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	conventions "go.opentelemetry.io/collector/semconv/v1.27.0"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/sharedcomponent"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/splunk"
@@ -31,26 +20,23 @@ import (
 // This file implements factory for Splunk HEC receiver.
 
 const (
-	// The value of "type" key in configuration.
-	typeStr = "splunk_hec"
-
-	// Default endpoints to bind to.
-	defaultEndpoint = ":8088"
+	// Default endpoint to bind to.
+	defaultEndpoint = "localhost:8088"
 )
 
 // NewFactory creates a factory for Splunk HEC receiver.
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
-		typeStr,
+		metadata.Type,
 		createDefaultConfig,
-		receiver.WithMetrics(createMetricsReceiver, metadata.Stability),
-		receiver.WithLogs(createLogsReceiver, metadata.Stability))
+		receiver.WithMetrics(createMetricsReceiver, metadata.MetricsStability),
+		receiver.WithLogs(createLogsReceiver, metadata.LogsStability))
 }
 
 // CreateDefaultConfig creates the default configuration for Splunk HEC receiver.
 func createDefaultConfig() component.Config {
 	return &Config{
-		HTTPServerSettings: confighttp.HTTPServerSettings{
+		ServerConfig: confighttp.ServerConfig{
 			Endpoint: defaultEndpoint,
 		},
 		AccessTokenPassthroughConfig: splunk.AccessTokenPassthroughConfig{},
@@ -62,13 +48,18 @@ func createDefaultConfig() component.Config {
 		},
 		RawPath:    splunk.DefaultRawPath,
 		HealthPath: splunk.DefaultHealthPath,
+		Ack: Ack{
+			Extension: nil,
+			Path:      splunk.DefaultAckPath,
+		},
+		Splitting: SplittingStrategyLine,
 	}
 }
 
-// CreateMetricsReceiver creates a metrics receiver based on provided config.
+// CreateMetrics creates a metrics receiver based on provided config.
 func createMetricsReceiver(
 	_ context.Context,
-	params receiver.CreateSettings,
+	params receiver.Settings,
 	cfg component.Config,
 	consumer consumer.Metrics,
 ) (receiver.Metrics, error) {
@@ -76,19 +67,20 @@ func createMetricsReceiver(
 	var recv receiver.Metrics
 	rCfg := cfg.(*Config)
 	r := receivers.GetOrAdd(cfg, func() component.Component {
-		recv, err = newMetricsReceiver(params, *rCfg, consumer)
+		recv, err = newReceiver(params, *rCfg)
 		return recv
 	})
 	if err != nil {
 		return nil, err
 	}
+	r.Unwrap().(*splunkReceiver).metricsConsumer = consumer
 	return r, nil
 }
 
 // createLogsReceiver creates a logs receiver based on provided config.
 func createLogsReceiver(
 	_ context.Context,
-	params receiver.CreateSettings,
+	params receiver.Settings,
 	cfg component.Config,
 	consumer consumer.Logs,
 ) (receiver.Logs, error) {
@@ -96,12 +88,13 @@ func createLogsReceiver(
 	var recv receiver.Logs
 	rCfg := cfg.(*Config)
 	r := receivers.GetOrAdd(cfg, func() component.Component {
-		recv, err = newLogsReceiver(params, *rCfg, consumer)
+		recv, err = newReceiver(params, *rCfg)
 		return recv
 	})
 	if err != nil {
 		return nil, err
 	}
+	r.Unwrap().(*splunkReceiver).logsConsumer = consumer
 	return r, nil
 }
 

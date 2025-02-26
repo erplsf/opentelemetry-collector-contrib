@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package rabbitmqreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/rabbitmqreceiver"
 
@@ -25,10 +14,17 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
-	"go.uber.org/multierr"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/rabbitmqreceiver/internal/metadata"
 )
 
 func TestValidate(t *testing.T) {
+	clientConfigInvalid := confighttp.NewDefaultClientConfig()
+	clientConfigInvalid.Endpoint = "invalid://endpoint:  12efg"
+
+	clientConfig := confighttp.NewDefaultClientConfig()
+	clientConfig.Endpoint = defaultEndpoint
+
 	testCases := []struct {
 		desc        string
 		cfg         *Config
@@ -37,63 +33,52 @@ func TestValidate(t *testing.T) {
 		{
 			desc: "missing username, password, and invalid endpoint",
 			cfg: &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "invalid://endpoint:  12efg",
-				},
+				ClientConfig: clientConfigInvalid,
 			},
-			expectedErr: multierr.Combine(
+			expectedErr: errors.Join(
 				errMissingUsername,
 				errMissingPassword,
-				fmt.Errorf("%s: %w", errInvalidEndpoint, errors.New(`parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`)),
-			),
+				fmt.Errorf("%w: %s", errInvalidEndpoint, `parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`)),
 		},
 		{
 			desc: "missing password and invalid endpoint",
 			cfg: &Config{
-				Username: "otelu",
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "invalid://endpoint:  12efg",
-				},
+				Username:     "otelu",
+				ClientConfig: clientConfigInvalid,
 			},
-			expectedErr: multierr.Combine(
+			expectedErr: errors.Join(
 				errMissingPassword,
-				fmt.Errorf("%s: %w", errInvalidEndpoint, errors.New(`parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`)),
+				fmt.Errorf("%w: %s", errInvalidEndpoint, `parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`),
 			),
 		},
 		{
 			desc: "missing username and invalid endpoint",
 			cfg: &Config{
-				Password: "otelp",
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "invalid://endpoint:  12efg",
-				},
+				Password:     "otelp",
+				ClientConfig: clientConfigInvalid,
 			},
-			expectedErr: multierr.Combine(
+			expectedErr: errors.Join(
 				errMissingUsername,
-				fmt.Errorf("%s: %w", errInvalidEndpoint, errors.New(`parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`)),
+				fmt.Errorf("%w: %s", errInvalidEndpoint, `parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`),
 			),
 		},
 		{
 			desc: "invalid endpoint",
 			cfg: &Config{
-				Username: "otelu",
-				Password: "otelp",
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "invalid://endpoint:  12efg",
-				},
+				Username:     "otelu",
+				Password:     "otelp",
+				ClientConfig: clientConfigInvalid,
 			},
-			expectedErr: multierr.Combine(
-				fmt.Errorf("%s: %w", errInvalidEndpoint, errors.New(`parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`)),
+			expectedErr: errors.Join(
+				fmt.Errorf("%w: %s", errInvalidEndpoint, `parse "invalid://endpoint:  12efg": invalid port ":  12efg" after host`),
 			),
 		},
 		{
 			desc: "valid config",
 			cfg: &Config{
-				Username: "otelu",
-				Password: "otelp",
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: defaultEndpoint,
-				},
+				Username:     "otelu",
+				Password:     "otelp",
+				ClientConfig: clientConfig,
 			},
 			expectedErr: nil,
 		},
@@ -107,7 +92,6 @@ func TestValidate(t *testing.T) {
 			} else {
 				require.NoError(t, actualErr)
 			}
-
 		})
 	}
 }
@@ -119,9 +103,9 @@ func TestLoadConfig(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
-	sub, err := cm.Sub(component.NewIDWithName(typeStr, "").String())
+	sub, err := cm.Sub(component.NewIDWithName(metadata.Type, "").String())
 	require.NoError(t, err)
-	require.NoError(t, component.UnmarshalConfig(sub, cfg))
+	require.NoError(t, sub.Unmarshal(cfg))
 
 	expected := factory.CreateDefaultConfig().(*Config)
 	expected.Endpoint = "http://localhost:15672"

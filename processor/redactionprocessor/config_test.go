@@ -1,16 +1,5 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package redactionprocessor
 
@@ -22,6 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -32,17 +24,19 @@ func TestLoadConfig(t *testing.T) {
 		expected component.Config
 	}{
 		{
-			id: component.NewIDWithName(typeStr, ""),
+			id: component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
-				AllowAllKeys:  false,
-				AllowedKeys:   []string{"description", "group", "id", "name"},
-				IgnoredKeys:   []string{"safe_attribute"},
-				BlockedValues: []string{"4[0-9]{12}(?:[0-9]{3})?", "(5[1-5][0-9]{14})"},
-				Summary:       debug,
+				AllowAllKeys:       false,
+				AllowedKeys:        []string{"description", "group", "id", "name"},
+				IgnoredKeys:        []string{"safe_attribute"},
+				BlockedValues:      []string{"4[0-9]{12}(?:[0-9]{3})?", "(5[1-5][0-9]{14})"},
+				BlockedKeyPatterns: []string{".*token.*", ".*api_key.*"},
+				AllowedValues:      []string{".+@mycompany.com"},
+				Summary:            debug,
 			},
 		},
 		{
-			id:       component.NewIDWithName(typeStr, "empty"),
+			id:       component.NewIDWithName(metadata.Type, "empty"),
 			expected: createDefaultConfig(),
 		},
 	}
@@ -57,9 +51,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}

@@ -1,6 +1,13 @@
-type: healthcheck
+type: health_check
 
 status:
   class: extension
-  stability: beta
-  distributions: [core, contrib]
+  stability:
+    beta: [extension]
+  distributions: [core, contrib, k8s]
+  codeowners:
+    active: []
+
+tests:
+  config:
+    endpoint: localhost:0

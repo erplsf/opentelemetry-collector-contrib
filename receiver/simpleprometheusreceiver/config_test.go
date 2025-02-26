@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package simpleprometheusreceiver
 
@@ -26,6 +15,9 @@ import (
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/simpleprometheusreceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -34,53 +26,57 @@ func TestLoadConfig(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
 
+	clientConfigPath := confighttp.NewDefaultClientConfig()
+	clientConfigPath.Endpoint = "localhost:1234"
+	clientConfigPath.TLSSetting = configtls.ClientConfig{
+		Config: configtls.Config{
+			CAFile:   "path",
+			CertFile: "path",
+			KeyFile:  "path",
+		},
+		InsecureSkipVerify: true,
+	}
+
+	clientConfigTLS := confighttp.NewDefaultClientConfig()
+	clientConfigTLS.Endpoint = "localhost:1234"
+	clientConfigTLS.TLSSetting = configtls.ClientConfig{
+		Insecure: true,
+	}
+
+	clientConfig := confighttp.NewDefaultClientConfig()
+	clientConfig.Endpoint = "localhost:1234"
+
 	tests := []struct {
 		id       component.ID
 		expected component.Config
 	}{
 		{
-			id:       component.NewIDWithName(typeStr, ""),
+			id:       component.NewIDWithName(metadata.Type, ""),
 			expected: createDefaultConfig(),
 		},
 		{
-			id: component.NewIDWithName(typeStr, "all_settings"),
+			id: component.NewIDWithName(metadata.Type, "all_settings"),
 			expected: &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "localhost:1234",
-					TLSSetting: configtls.TLSClientSetting{
-						TLSSetting: configtls.TLSSetting{
-							CAFile:   "path",
-							CertFile: "path",
-							KeyFile:  "path",
-						},
-						InsecureSkipVerify: true,
-					},
-				},
+				ClientConfig:       clientConfigPath,
 				CollectionInterval: 30 * time.Second,
 				MetricsPath:        "/v2/metrics",
+				JobName:            "job123",
 				Params:             url.Values{"columns": []string{"name", "messages"}, "key": []string{"foo", "bar"}},
 				UseServiceAccount:  true,
 			},
 		},
 		{
-			id: component.NewIDWithName(typeStr, "partial_settings"),
+			id: component.NewIDWithName(metadata.Type, "partial_settings"),
 			expected: &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "localhost:1234",
-					TLSSetting: configtls.TLSClientSetting{
-						Insecure: true,
-					},
-				},
+				ClientConfig:       clientConfigTLS,
 				CollectionInterval: 30 * time.Second,
 				MetricsPath:        "/metrics",
 			},
 		},
 		{
-			id: component.NewIDWithName(typeStr, "partial_tls_settings"),
+			id: component.NewIDWithName(metadata.Type, "partial_tls_settings"),
 			expected: &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: "localhost:1234",
-				},
+				ClientConfig:       clientConfig,
 				CollectionInterval: 30 * time.Second,
 				MetricsPath:        "/metrics",
 			},
@@ -94,9 +90,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}

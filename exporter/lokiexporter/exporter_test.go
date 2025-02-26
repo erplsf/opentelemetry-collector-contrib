@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package lokiexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter"
 
@@ -33,24 +22,26 @@ import (
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/pdata/plog"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter/internal/metadata"
 )
 
 func TestPushLogData(t *testing.T) {
 	testCases := []struct {
 		desc          string
-		hints         map[string]interface{}
-		attrs         map[string]interface{}
-		res           map[string]interface{}
+		hints         map[string]any
+		attrs         map[string]any
+		res           map[string]any
 		expectedLabel string
 		expectedLine  string
 	}{
 		{
 			desc: "with attribute to label and regular attribute",
-			attrs: map[string]interface{}{
+			attrs: map[string]any{
 				"host.name":   "guarana",
 				"http.status": 200,
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				"loki.attribute.labels": "host.name",
 			},
 			expectedLabel: `{exporter="OTLP", host_name="guarana"}`,
@@ -58,11 +49,11 @@ func TestPushLogData(t *testing.T) {
 		},
 		{
 			desc: "with resource to label and regular resource",
-			res: map[string]interface{}{
+			res: map[string]any{
 				"host.name": "guarana",
 				"region.az": "eu-west-1a",
 			},
-			hints: map[string]interface{}{
+			hints: map[string]any{
 				"loki.resource.labels": "host.name",
 			},
 			expectedLabel: `{exporter="OTLP", host_name="guarana"}`,
@@ -74,26 +65,26 @@ func TestPushLogData(t *testing.T) {
 			actualPushRequest := &push.PushRequest{}
 
 			// prepare
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				encPayload, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 
 				decPayload, err := snappy.Decode(nil, encPayload)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 
 				err = proto.Unmarshal(decPayload, actualPushRequest)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 			}))
 			defer ts.Close()
 
+			clientConfig := confighttp.NewDefaultClientConfig()
+			clientConfig.Endpoint = ts.URL
 			cfg := &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: ts.URL,
-				},
+				ClientConfig: clientConfig,
 			}
 
 			f := NewFactory()
-			exp, err := f.CreateLogsExporter(context.Background(), exportertest.NewNopCreateSettings(), cfg)
+			exp, err := f.CreateLogs(context.Background(), exportertest.NewNopSettings(metadata.Type), cfg)
 			require.NoError(t, err)
 
 			err = exp.Start(context.Background(), componenttest.NewNopHost())
@@ -171,12 +162,12 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 				label string
 			}{
 				"1": {
-					label: `{exporter="OTLP", tenant_id="1"}`,
-					line:  `{"attributes":{"http.status":200}}`,
+					label: `{exporter="OTLP"}`,
+					line:  `{"attributes":{"http.status":200,"tenant.id":"1"}}`,
 				},
 				"2": {
-					label: `{exporter="OTLP", tenant_id="2"}`,
-					line:  `{"attributes":{"http.status":200}}`,
+					label: `{exporter="OTLP"}`,
+					line:  `{"attributes":{"http.status":200,"tenant.id":"2"}}`,
 				},
 			},
 		},
@@ -235,12 +226,12 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 				label string
 			}{
 				"1": {
-					label: `{exporter="OTLP", tenant_id="1"}`,
-					line:  `{"attributes":{"http.status":200}}`,
+					label: `{exporter="OTLP"}`,
+					line:  `{"attributes":{"http.status":200,"tenant.id":"11"},"resources":{"tenant.id":"1"}}`,
 				},
 				"2": {
-					label: `{exporter="OTLP", tenant_id="2"}`,
-					line:  `{"attributes":{"http.status":200}}`,
+					label: `{exporter="OTLP"}`,
+					line:  `{"attributes":{"http.status":200,"tenant.id":"22"},"resources":{"tenant.id":"2"}}`,
 				},
 			},
 		},
@@ -250,29 +241,30 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 			actualPushRequestPerTenant := map[string]*push.PushRequest{}
 
 			// prepare
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				encPayload, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 
 				decPayload, err := snappy.Decode(nil, encPayload)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 
 				pr := &push.PushRequest{}
 				err = proto.Unmarshal(decPayload, pr)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 
 				actualPushRequestPerTenant[r.Header.Get("X-Scope-OrgID")] = pr
 			}))
 			defer ts.Close()
 
+			clientConfig := confighttp.NewDefaultClientConfig()
+			clientConfig.Endpoint = ts.URL
+
 			cfg := &Config{
-				HTTPClientSettings: confighttp.HTTPClientSettings{
-					Endpoint: ts.URL,
-				},
+				ClientConfig: clientConfig,
 			}
 
 			f := NewFactory()
-			exp, err := f.CreateLogsExporter(context.Background(), exportertest.NewNopCreateSettings(), cfg)
+			exp, err := f.CreateLogs(context.Background(), exportertest.NewNopSettings(metadata.Type), cfg)
 			require.NoError(t, err)
 
 			err = exp.Start(context.Background(), componenttest.NewNopHost())
@@ -287,7 +279,7 @@ func TestLogsToLokiRequestWithGroupingByTenant(t *testing.T) {
 			assert.Equal(t, len(actualPushRequestPerTenant), len(tC.expected))
 			for tenant, request := range actualPushRequestPerTenant {
 				pr, ok := tC.expected[tenant]
-				assert.Equal(t, ok, true)
+				assert.True(t, ok)
 
 				expectedLabel := pr.label
 				expectedLine := pr.line

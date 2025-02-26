@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package sentryexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/sentryexporter"
 
@@ -30,7 +19,7 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	conventions "go.opentelemetry.io/collector/semconv/v1.18.0"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/traceutil"
 )
@@ -323,6 +312,13 @@ func generateSpanDescriptors(name string, attrs pcommon.Map, spanKind ptrace.Spa
 			opBuilder.WriteString(".client")
 		case ptrace.SpanKindServer:
 			opBuilder.WriteString(".server")
+		case ptrace.SpanKindUnspecified:
+		case ptrace.SpanKindInternal:
+			opBuilder.WriteString(".internal")
+		case ptrace.SpanKindProducer:
+			opBuilder.WriteString(".producer")
+		case ptrace.SpanKindConsumer:
+			opBuilder.WriteString(".consumer")
 		}
 
 		// Ex. description="GET /api/users/{user_id}".
@@ -387,6 +383,10 @@ func generateTagsFromAttributes(attrs pcommon.Map) map[string]string {
 			tags[key] = strconv.FormatFloat(attr.Double(), 'g', -1, 64)
 		case pcommon.ValueTypeInt:
 			tags[key] = strconv.FormatInt(attr.Int(), 10)
+		case pcommon.ValueTypeEmpty:
+		case pcommon.ValueTypeMap:
+		case pcommon.ValueTypeSlice:
+		case pcommon.ValueTypeBytes:
 		}
 		return true
 	})
@@ -479,8 +479,8 @@ func generateEventID() sentry.EventID {
 	return sentry.EventID(uuid())
 }
 
-// CreateSentryExporter returns a new Sentry Exporter.
-func CreateSentryExporter(config *Config, set exporter.CreateSettings) (exporter.Traces, error) {
+// createSentryExporter returns a new Sentry Exporter.
+func createSentryExporter(config *Config, set exporter.Settings) (exporter.Traces, error) {
 	transport := newSentryTransport()
 
 	clientOptions := sentry.ClientOptions{
@@ -499,7 +499,7 @@ func CreateSentryExporter(config *Config, set exporter.CreateSettings) (exporter
 		environment: config.Environment,
 	}
 
-	return exporterhelper.NewTracesExporter(
+	return exporterhelper.NewTraces(
 		context.TODO(),
 		set,
 		config,

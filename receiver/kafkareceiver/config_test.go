@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package kafkareceiver
 
@@ -22,10 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/kafka"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/kafkareceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -40,16 +33,20 @@ func TestLoadConfig(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			id: component.NewIDWithName(typeStr, ""),
+			id: component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
-				Topic:    "spans",
-				Encoding: "otlp_proto",
-				Brokers:  []string{"foo:123", "bar:456"},
-				ClientID: "otel-collector",
-				GroupID:  "otel-collector",
-				Authentication: kafkaexporter.Authentication{
-					TLS: &configtls.TLSClientSetting{
-						TLSSetting: configtls.TLSSetting{
+				Topic:                                "spans",
+				Encoding:                             "otlp_proto",
+				Brokers:                              []string{"foo:123", "bar:456"},
+				ResolveCanonicalBootstrapServersOnly: true,
+				ClientID:                             "otel-collector",
+				GroupID:                              "otel-collector",
+				InitialOffset:                        "latest",
+				SessionTimeout:                       10 * time.Second,
+				HeartbeatInterval:                    3 * time.Second,
+				Authentication: kafka.Authentication{
+					TLS: &configtls.ClientConfig{
+						Config: configtls.Config{
 							CAFile:   "ca.pem",
 							CertFile: "cert.pem",
 							KeyFile:  "key.pem",
@@ -66,21 +63,29 @@ func TestLoadConfig(t *testing.T) {
 				AutoCommit: AutoCommit{
 					Enable:   true,
 					Interval: 1 * time.Second,
+				},
+				MinFetchSize:     1,
+				DefaultFetchSize: 1048576,
+				MaxFetchSize:     0,
+				ErrorBackOff: configretry.BackOffConfig{
+					Enabled: false,
 				},
 			},
 		},
 		{
-
-			id: component.NewIDWithName(typeStr, "logs"),
+			id: component.NewIDWithName(metadata.Type, "logs"),
 			expected: &Config{
-				Topic:    "logs",
-				Encoding: "direct",
-				Brokers:  []string{"coffee:123", "foobar:456"},
-				ClientID: "otel-collector",
-				GroupID:  "otel-collector",
-				Authentication: kafkaexporter.Authentication{
-					TLS: &configtls.TLSClientSetting{
-						TLSSetting: configtls.TLSSetting{
+				Topic:             "logs",
+				Encoding:          "direct",
+				Brokers:           []string{"coffee:123", "foobar:456"},
+				ClientID:          "otel-collector",
+				GroupID:           "otel-collector",
+				InitialOffset:     "earliest",
+				SessionTimeout:    45 * time.Second,
+				HeartbeatInterval: 15 * time.Second,
+				Authentication: kafka.Authentication{
+					TLS: &configtls.ClientConfig{
+						Config: configtls.Config{
 							CAFile:   "ca.pem",
 							CertFile: "cert.pem",
 							KeyFile:  "key.pem",
@@ -97,6 +102,16 @@ func TestLoadConfig(t *testing.T) {
 				AutoCommit: AutoCommit{
 					Enable:   true,
 					Interval: 1 * time.Second,
+				},
+				MinFetchSize:     1,
+				DefaultFetchSize: 1048576,
+				MaxFetchSize:     0,
+				ErrorBackOff: configretry.BackOffConfig{
+					Enabled:         true,
+					InitialInterval: 1 * time.Second,
+					MaxInterval:     10 * time.Second,
+					MaxElapsedTime:  1 * time.Minute,
+					Multiplier:      1.5,
 				},
 			},
 		},
@@ -109,9 +124,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}

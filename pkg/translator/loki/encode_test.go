@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package loki // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/loki"
 
@@ -24,7 +13,6 @@ import (
 )
 
 func exampleLog() (plog.LogRecord, pcommon.Resource, pcommon.InstrumentationScope) {
-
 	buffer := plog.NewLogRecord()
 	buffer.Body().SetStr("Example log")
 	buffer.SetSeverityText("error")
@@ -66,8 +54,17 @@ func TestEncodeJsonWithMapBody(t *testing.T) {
 	assert.Equal(t, in, out)
 }
 
-func TestSerializeComplexBody(t *testing.T) {
+func TestEncodeJsonWithInstrumentationScopeAttributes(t *testing.T) {
+	in := `{"body":"Example log","traceid":"01020304000000000000000000000000","spanid":"0506070800000000","severity":"error","attributes":{"attr1":"1","attr2":"2"},"resources":{"host.name":"something"},"instrumentation_scope":{"name":"example-logger-name","version":"v1","attributes":{"foo":"bar"}}}`
+	log, resource, scope := exampleLog()
+	scope.Attributes().PutStr("foo", "bar")
 
+	out, err := Encode(log, resource, scope)
+	assert.NoError(t, err)
+	assert.Equal(t, in, out)
+}
+
+func TestSerializeComplexBody(t *testing.T) {
 	arrayval := pcommon.NewValueSlice()
 	arrayval.Slice().AppendEmpty().SetStr("a")
 	arrayval.Slice().AppendEmpty().SetStr("b")
@@ -152,6 +149,16 @@ func TestSerializeComplexBody(t *testing.T) {
 	}
 }
 
+func TestEncodeWithFlags(t *testing.T) {
+	in := `{"body":"Example log","traceid":"01020304000000000000000000000000","spanid":"0506070800000000","severity":"error","flags":1,"attributes":{"attr1":"1","attr2":"2"},"resources":{"host.name":"something"},"instrumentation_scope":{"name":"example-logger-name","version":"v1"}}`
+	log, resource, scope := exampleLog()
+	log.SetFlags(plog.DefaultLogRecordFlags.WithIsSampled(true))
+
+	out, err := Encode(log, resource, scope)
+	assert.NoError(t, err)
+	assert.Equal(t, in, out)
+}
+
 func TestEncodeLogfmtWithStringBody(t *testing.T) {
 	in := `msg="hello world" traceID=01020304000000000000000000000000 spanID=0506070800000000 severity=error attribute_attr1=1 attribute_attr2=2 resource_host.name=something instrumentation_scope_name=example-logger-name instrumentation_scope_version=v1`
 	log, resource, scope := exampleLog()
@@ -202,6 +209,26 @@ func TestEncodeLogfmtWithComplexAttributes(t *testing.T) {
 	sliceVal.CopyTo(log.Attributes().PutEmpty("aslice"))
 	sliceVal.CopyTo(resource.Attributes().PutEmpty("bslice"))
 
+	out, err := EncodeLogfmt(log, resource, scope)
+	assert.NoError(t, err)
+	assert.Equal(t, in, out)
+}
+
+func TestEncodeLogfmtWithFlags(t *testing.T) {
+	in := `msg="hello world" traceID=01020304000000000000000000000000 spanID=0506070800000000 severity=error flags=1 attribute_attr1=1 attribute_attr2=2 resource_host.name=something instrumentation_scope_name=example-logger-name instrumentation_scope_version=v1`
+	log, resource, scope := exampleLog()
+	log.Body().SetStr("msg=\"hello world\"")
+	log.SetFlags(plog.DefaultLogRecordFlags.WithIsSampled(true))
+	out, err := EncodeLogfmt(log, resource, scope)
+	assert.NoError(t, err)
+	assert.Equal(t, in, out)
+}
+
+func TestEncodeLogfmtWithInstrumentationScopeAttributes(t *testing.T) {
+	in := `msg="hello world" traceID=01020304000000000000000000000000 spanID=0506070800000000 severity=error attribute_attr1=1 attribute_attr2=2 resource_host.name=something instrumentation_scope_name=example-logger-name instrumentation_scope_version=v1 instrumentation_scope_attribute_foo=bar`
+	log, resource, scope := exampleLog()
+	scope.Attributes().PutStr("foo", "bar")
+	log.Body().SetStr("msg=\"hello world\"")
 	out, err := EncodeLogfmt(log, resource, scope)
 	assert.NoError(t, err)
 	assert.Equal(t, in, out)

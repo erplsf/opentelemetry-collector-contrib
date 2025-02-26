@@ -1,21 +1,10 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package cache // import "github.com/open-telemetry/opentelemetry-collector-contrib/connector/spanmetricsconnector/internal/cache"
 
 import (
-	"github.com/hashicorp/golang-lru/simplelru"
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 )
 
 // Cache consists of an LRU cache and the evicted items from the LRU cache.
@@ -26,15 +15,15 @@ import (
 //
 // Important: This implementation is non-thread safe.
 type Cache[K comparable, V any] struct {
-	lru          simplelru.LRUCache
+	lru          *simplelru.LRU[K, V]
 	evictedItems map[K]V
 }
 
 // NewCache creates a Cache.
 func NewCache[K comparable, V any](size int) (*Cache[K, V], error) {
 	evictedItems := make(map[K]V)
-	lruCache, err := simplelru.NewLRU(size, func(key any, value any) {
-		evictedItems[key.(K)] = value.(V)
+	lruCache, err := simplelru.NewLRU(size, func(key K, value V) {
+		evictedItems[key] = value
 	})
 	if err != nil {
 		return nil, err
@@ -62,7 +51,7 @@ func (c *Cache[K, V]) Add(key K, value V) bool {
 // Get an item from the LRU cache or evicted items.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
 	if val, ok := c.lru.Get(key); ok {
-		return val.(V), ok
+		return val, ok
 	}
 	val, ok := c.evictedItems[key]
 
@@ -75,6 +64,11 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 	return val, ok
 }
 
+// Remove removes a key from the cache if it exists.
+func (c *Cache[K, V]) Remove(key K) bool {
+	return c.lru.Remove(key)
+}
+
 // Len returns the number of items in the cache.
 func (c *Cache[K, V]) Len() int {
 	return c.lru.Len()
@@ -84,4 +78,18 @@ func (c *Cache[K, V]) Len() int {
 func (c *Cache[K, V]) Purge() {
 	c.lru.Purge()
 	c.RemoveEvictedItems()
+}
+
+// ForEach iterates over all the items within the cache, as well as the evicted items (if any).
+func (c *Cache[K, V]) ForEach(fn func(k K, v V)) {
+	for _, k := range c.lru.Keys() {
+		v, ok := c.lru.Get(k)
+		if ok {
+			fn(k, v)
+		}
+	}
+
+	for k, v := range c.evictedItems {
+		fn(k, v)
+	}
 }

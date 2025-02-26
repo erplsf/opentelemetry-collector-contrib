@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package cloudflarereceiver
 
@@ -33,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -40,6 +30,7 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver/internal/metadata"
 )
 
 func TestPayloadToLogRecord(t *testing.T) {
@@ -59,12 +50,12 @@ func TestPayloadToLogRecord(t *testing.T) {
 				logs := plog.NewLogs()
 				rl := logs.ResourceLogs().AppendEmpty()
 				sl := rl.ScopeLogs().AppendEmpty()
-				sl.Scope().SetName(receiverScopeName)
+				sl.Scope().SetName("github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver")
 
 				for idx, line := range strings.Split(payload, "\n") {
 					lr := sl.LogRecords().AppendEmpty()
 
-					require.NoError(t, lr.Attributes().FromRaw(map[string]interface{}{
+					require.NoError(t, lr.Attributes().FromRaw(map[string]any{
 						"http_request.client_ip": fmt.Sprintf("89.163.253.%d", 200+idx),
 					}))
 
@@ -74,7 +65,7 @@ func TestPayloadToLogRecord(t *testing.T) {
 					lr.SetSeverityNumber(plog.SeverityNumberInfo)
 					lr.SetSeverityText(plog.SeverityNumberInfo.String())
 
-					var log map[string]interface{}
+					var log map[string]any
 					err := json.Unmarshal([]byte(line), &log)
 					require.NoError(t, err)
 
@@ -92,15 +83,15 @@ func TestPayloadToLogRecord(t *testing.T) {
 				logs := plog.NewLogs()
 				rl := logs.ResourceLogs().AppendEmpty()
 
-				require.NoError(t, rl.Resource().Attributes().FromRaw(map[string]interface{}{
+				require.NoError(t, rl.Resource().Attributes().FromRaw(map[string]any{
 					"cloudflare.zone": "otlpdev.net",
 				}))
 
 				sl := rl.ScopeLogs().AppendEmpty()
-				sl.Scope().SetName(receiverScopeName)
+				sl.Scope().SetName("github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver")
 				lr := sl.LogRecords().AppendEmpty()
 
-				require.NoError(t, lr.Attributes().FromRaw(map[string]interface{}{
+				require.NoError(t, lr.Attributes().FromRaw(map[string]any{
 					"http_request.client_ip": "47.35.104.49",
 				}))
 
@@ -110,7 +101,7 @@ func TestPayloadToLogRecord(t *testing.T) {
 				lr.SetSeverityNumber(plog.SeverityNumberWarn)
 				lr.SetSeverityText(plog.SeverityNumberWarn.String())
 
-				var log map[string]interface{}
+				var log map[string]any
 				err := json.Unmarshal([]byte(payload), &log)
 				require.NoError(t, err)
 
@@ -126,7 +117,7 @@ func TestPayloadToLogRecord(t *testing.T) {
 			recv := newReceiver(t, &Config{
 				Logs: LogsConfig{
 					Endpoint:       "localhost:0",
-					TLS:            &configtls.TLSServerSetting{},
+					TLS:            &configtls.ServerConfig{},
 					TimestampField: "EdgeStartTimestamp",
 					Attributes: map[string]string{
 						"ClientIP": "http_request.client_ip",
@@ -143,7 +134,7 @@ func TestPayloadToLogRecord(t *testing.T) {
 			if tc.expectedErr != "" {
 				require.Error(t, err)
 				require.Nil(t, logs)
-				require.Contains(t, err.Error(), tc.expectedErr)
+				require.ErrorContains(t, err, tc.expectedErr)
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, logs)
@@ -154,7 +145,7 @@ func TestPayloadToLogRecord(t *testing.T) {
 }
 
 func payloadToExpectedBody(t *testing.T, payload string, lr plog.LogRecord) {
-	var body map[string]interface{}
+	var body map[string]any
 	err := json.Unmarshal([]byte(payload), &body)
 	require.NoError(t, err)
 	require.NoError(t, lr.Body().SetEmptyMap().FromRaw(body))
@@ -202,11 +193,12 @@ func TestHandleRequest(t *testing.T) {
 		expectedStatusCode int
 		logExpected        bool
 		consumerFailure    bool
+		permanentFailure   bool // indicates a permanent error
 	}{
 		{
 			name: "No secret provided",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(`{"ClientIP": "127.0.0.1"}`)),
 			},
@@ -217,7 +209,7 @@ func TestHandleRequest(t *testing.T) {
 		{
 			name: "Invalid payload",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(`{"ClientIP": "127.0.0.1"`)),
 				Header: map[string][]string{
@@ -231,7 +223,7 @@ func TestHandleRequest(t *testing.T) {
 		{
 			name: "Consumer fails",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(`{"ClientIP": "127.0.0.1"}`)),
 				Header: map[string][]string{
@@ -240,12 +232,27 @@ func TestHandleRequest(t *testing.T) {
 			},
 			logExpected:        false,
 			consumerFailure:    true,
-			expectedStatusCode: http.StatusInternalServerError,
+			expectedStatusCode: http.StatusServiceUnavailable,
+		},
+		{
+			name: "Consumer fails - permanent error",
+			request: &http.Request{
+				Method: http.MethodPost,
+				URL:    &url.URL{},
+				Body:   io.NopCloser(bytes.NewBufferString(`{"ClientIP": "127.0.0.1"}`)),
+				Header: map[string][]string{
+					textproto.CanonicalMIMEHeaderKey(secretHeaderName): {"abc123"},
+				},
+			},
+			logExpected:        false,
+			consumerFailure:    true,
+			permanentFailure:   true,
+			expectedStatusCode: http.StatusBadRequest,
 		},
 		{
 			name: "Request succeeds",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(`{"ClientIP": "127.0.0.1", "MyTimestamp": "2023-03-03T05:29:06Z"}`)),
 				Header: map[string][]string{
@@ -259,7 +266,7 @@ func TestHandleRequest(t *testing.T) {
 		{
 			name: "Request succeeds with gzip",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(gzippedMessage(`{"ClientIP": "127.0.0.1", "MyTimestamp": "2023-03-03T05:29:06Z"}`))),
 				Header: map[string][]string{
@@ -275,7 +282,7 @@ func TestHandleRequest(t *testing.T) {
 		{
 			name: "Request fails to unzip gzip",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(`thisisnotvalidzippedcontent`)),
 				Header: map[string][]string{
@@ -291,7 +298,7 @@ func TestHandleRequest(t *testing.T) {
 		{
 			name: "test message passes",
 			request: &http.Request{
-				Method: "POST",
+				Method: http.MethodPost,
 				URL:    &url.URL{},
 				Body:   io.NopCloser(bytes.NewBufferString(`test`)),
 				Header: map[string][]string{
@@ -309,6 +316,9 @@ func TestHandleRequest(t *testing.T) {
 			var consumer consumer.Logs
 			if tc.consumerFailure {
 				consumer = consumertest.NewErr(errors.New("consumer failed"))
+				if tc.permanentFailure {
+					consumer = consumertest.NewErr(consumererror.NewPermanent(errors.New("consumer failed")))
+				}
 			} else {
 				consumer = &consumertest.LogsSink{}
 			}
@@ -321,7 +331,7 @@ func TestHandleRequest(t *testing.T) {
 					Attributes: map[string]string{
 						"ClientIP": "http_request.client_ip",
 					},
-					TLS: &configtls.TLSServerSetting{},
+					TLS: &configtls.ServerConfig{},
 				},
 			},
 				consumer,
@@ -355,7 +365,7 @@ func gzippedMessage(message string) string {
 }
 
 func newReceiver(t *testing.T, cfg *Config, nextConsumer consumer.Logs) *logsReceiver {
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings(metadata.Type)
 	set.Logger = zaptest.NewLogger(t)
 	r, err := newLogsReceiver(set, cfg, nextConsumer)
 	require.NoError(t, err)

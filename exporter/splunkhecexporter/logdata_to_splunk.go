@@ -1,16 +1,5 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package splunkhecexporter // import "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/splunkhecexporter"
 
@@ -19,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/goccy/go-json"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 
@@ -34,16 +23,53 @@ const (
 	traceIDFieldKey = "trace_id"
 )
 
+// copyOtelAttrs copies values from HecToOtelAttrs to OtelAttrsToHec struct.
+func copyOtelAttrs(config *Config) {
+	defaultCfg := createDefaultConfig().(*Config)
+	if config.OtelAttrsToHec.Equal(defaultCfg.OtelAttrsToHec) {
+		if !config.HecToOtelAttrs.Equal(defaultCfg.HecToOtelAttrs) {
+			// Copy settings to ease deprecation of HecToOtelAttrs.
+			config.OtelAttrsToHec = config.HecToOtelAttrs
+		}
+	} else {
+		if !config.HecToOtelAttrs.Equal(defaultCfg.HecToOtelAttrs) {
+			// Replace all default fields in OtelAttrsToHec.
+			if config.OtelAttrsToHec.Source == defaultCfg.OtelAttrsToHec.Source {
+				config.OtelAttrsToHec.Source = config.HecToOtelAttrs.Source
+			}
+			if config.OtelAttrsToHec.SourceType == defaultCfg.OtelAttrsToHec.SourceType {
+				config.OtelAttrsToHec.SourceType = config.HecToOtelAttrs.SourceType
+			}
+			if config.OtelAttrsToHec.Index == defaultCfg.OtelAttrsToHec.Index {
+				config.OtelAttrsToHec.Index = config.HecToOtelAttrs.Index
+			}
+			if config.OtelAttrsToHec.Host == defaultCfg.OtelAttrsToHec.Host {
+				config.OtelAttrsToHec.Host = config.HecToOtelAttrs.Host
+			}
+		}
+	}
+}
+
 func mapLogRecordToSplunkEvent(res pcommon.Resource, lr plog.LogRecord, config *Config) *splunk.Event {
+	body := lr.Body().AsRaw()
+	if body == nil || body == "" {
+		// events with no body are rejected by Splunk.
+		return nil
+	}
+
+	// Manage the deprecation of HecToOtelAttrs config parameters.
+	// TODO: remove this once HecToOtelAttrs is removed from Config.
+	copyOtelAttrs(config)
+
 	host := unknownHostName
 	source := config.Source
 	sourcetype := config.SourceType
 	index := config.Index
-	fields := map[string]interface{}{}
-	sourceKey := config.HecToOtelAttrs.Source
-	sourceTypeKey := config.HecToOtelAttrs.SourceType
-	indexKey := config.HecToOtelAttrs.Index
-	hostKey := config.HecToOtelAttrs.Host
+	fields := map[string]any{}
+	sourceKey := config.OtelAttrsToHec.Source
+	sourceTypeKey := config.OtelAttrsToHec.SourceType
+	indexKey := config.OtelAttrsToHec.Index
+	hostKey := config.OtelAttrsToHec.Host
 	severityTextKey := config.HecFields.SeverityText
 	severityNumberKey := config.HecFields.SeverityNumber
 	if spanID := lr.SpanID(); !spanID.IsEmpty() {
@@ -100,24 +126,14 @@ func mapLogRecordToSplunkEvent(res pcommon.Resource, lr plog.LogRecord, config *
 		Source:     source,
 		SourceType: sourcetype,
 		Index:      index,
-		Event:      lr.Body().AsRaw(),
+		Event:      body,
 		Fields:     fields,
 	}
 }
 
 // nanoTimestampToEpochMilliseconds transforms nanoseconds into <sec>.<ms>. For example, 1433188255.500 indicates 1433188255 seconds and 500 milliseconds after epoch.
-func nanoTimestampToEpochMilliseconds(ts pcommon.Timestamp) *float64 {
-	duration := time.Duration(ts)
-	if duration == 0 {
-		// some telemetry sources send data with timestamps set to 0 by design, as their original target destinations
-		// (i.e. before Open Telemetry) are setup with the know-how on how to consume them. In this case,
-		// we want to omit the time field when sending data to the Splunk HEC so that the HEC adds a timestamp
-		// at indexing time, which will be much more useful than a 0-epoch-time value.
-		return nil
-	}
-
-	val := duration.Round(time.Millisecond).Seconds()
-	return &val
+func nanoTimestampToEpochMilliseconds(ts pcommon.Timestamp) float64 {
+	return time.Duration(ts).Round(time.Millisecond).Seconds()
 }
 
 func mergeValue(dst map[string]any, k string, v any) {
@@ -126,15 +142,14 @@ func mergeValue(dst map[string]any, k string, v any) {
 		if isArrayFlat(element) {
 			dst[k] = v
 		} else {
-			jsonStr, _ := jsoniter.MarshalToString(element)
-			dst[k] = jsonStr
+			b, _ := json.Marshal(element)
+			dst[k] = string(b)
 		}
 	case map[string]any:
 		flattenAndMergeMap(element, dst, k)
 	default:
 		dst[k] = v
 	}
-
 }
 
 func isArrayFlat(array []any) bool {
@@ -157,8 +172,8 @@ func flattenAndMergeMap(src, dst map[string]any, key string) {
 			if isArrayFlat(element) {
 				dst[current] = element
 			} else {
-				jsonStr, _ := jsoniter.MarshalToString(element)
-				dst[current] = jsonStr
+				b, _ := json.Marshal(element)
+				dst[current] = string(b)
 			}
 
 		default:

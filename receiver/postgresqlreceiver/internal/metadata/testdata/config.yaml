@@ -13,6 +13,10 @@ all_set:
       enabled: true
     postgresql.bgwriter.maxwritten:
       enabled: true
+    postgresql.blks_hit:
+      enabled: true
+    postgresql.blks_read:
+      enabled: true
     postgresql.blocks_read:
       enabled: true
     postgresql.commits:
@@ -21,7 +25,11 @@ all_set:
       enabled: true
     postgresql.database.count:
       enabled: true
+    postgresql.database.locks:
+      enabled: true
     postgresql.db_size:
+      enabled: true
+    postgresql.deadlocks:
       enabled: true
     postgresql.index.scans:
       enabled: true
@@ -35,13 +43,29 @@ all_set:
       enabled: true
     postgresql.rows:
       enabled: true
+    postgresql.sequential_scans:
+      enabled: true
     postgresql.table.count:
       enabled: true
     postgresql.table.size:
       enabled: true
     postgresql.table.vacuum.count:
       enabled: true
+    postgresql.temp_files:
+      enabled: true
+    postgresql.tup_deleted:
+      enabled: true
+    postgresql.tup_fetched:
+      enabled: true
+    postgresql.tup_inserted:
+      enabled: true
+    postgresql.tup_returned:
+      enabled: true
+    postgresql.tup_updated:
+      enabled: true
     postgresql.wal.age:
+      enabled: true
+    postgresql.wal.delay:
       enabled: true
     postgresql.wal.lag:
       enabled: true
@@ -49,6 +73,8 @@ all_set:
     postgresql.database.name:
       enabled: true
     postgresql.index.name:
+      enabled: true
+    postgresql.schema.name:
       enabled: true
     postgresql.table.name:
       enabled: true
@@ -66,6 +92,10 @@ none_set:
       enabled: false
     postgresql.bgwriter.maxwritten:
       enabled: false
+    postgresql.blks_hit:
+      enabled: false
+    postgresql.blks_read:
+      enabled: false
     postgresql.blocks_read:
       enabled: false
     postgresql.commits:
@@ -74,7 +104,11 @@ none_set:
       enabled: false
     postgresql.database.count:
       enabled: false
+    postgresql.database.locks:
+      enabled: false
     postgresql.db_size:
+      enabled: false
+    postgresql.deadlocks:
       enabled: false
     postgresql.index.scans:
       enabled: false
@@ -88,13 +122,29 @@ none_set:
       enabled: false
     postgresql.rows:
       enabled: false
+    postgresql.sequential_scans:
+      enabled: false
     postgresql.table.count:
       enabled: false
     postgresql.table.size:
       enabled: false
     postgresql.table.vacuum.count:
       enabled: false
+    postgresql.temp_files:
+      enabled: false
+    postgresql.tup_deleted:
+      enabled: false
+    postgresql.tup_fetched:
+      enabled: false
+    postgresql.tup_inserted:
+      enabled: false
+    postgresql.tup_returned:
+      enabled: false
+    postgresql.tup_updated:
+      enabled: false
     postgresql.wal.age:
+      enabled: false
+    postgresql.wal.delay:
       enabled: false
     postgresql.wal.lag:
       enabled: false
@@ -103,5 +153,43 @@ none_set:
       enabled: false
     postgresql.index.name:
       enabled: false
+    postgresql.schema.name:
+      enabled: false
     postgresql.table.name:
       enabled: false
+filter_set_include:
+  resource_attributes:
+    postgresql.database.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    postgresql.index.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    postgresql.schema.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+    postgresql.table.name:
+      enabled: true
+      metrics_include:
+        - regexp: ".*"
+filter_set_exclude:
+  resource_attributes:
+    postgresql.database.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "postgresql.database.name-val"
+    postgresql.index.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "postgresql.index.name-val"
+    postgresql.schema.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "postgresql.schema.name-val"
+    postgresql.table.name:
+      enabled: true
+      metrics_exclude:
+        - strict: "postgresql.table.name-val"

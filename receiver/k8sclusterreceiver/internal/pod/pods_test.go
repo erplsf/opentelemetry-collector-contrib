@@ -1,37 +1,31 @@
-// Copyright 2020, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package pod
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	agentmetricspb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/metrics/v1"
-	metricspb "github.com/census-instrumentation/opencensus-proto/gen-go/metrics/v1"
-	resourcepb "github.com/census-instrumentation/opencensus-proto/gen-go/resource/v1"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/receiver/receivertest"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/experimentalmetricmetadata"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8sclusterreceiver/internal/constants"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/pmetrictest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8sclusterreceiver/internal/gvk"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8sclusterreceiver/internal/metadata"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8sclusterreceiver/internal/testutils"
 )
@@ -46,71 +40,55 @@ func TestPodAndContainerMetricsReportCPUMetrics(t *testing.T) {
 	pod := testutils.NewPodWithContainer(
 		"1",
 		testutils.NewPodSpecWithContainer("container-name"),
-		testutils.NewPodStatusWithContainer("container-name", containerIDWithPreifx("container-id")),
+		testutils.NewPodStatusWithContainer("container-name", containerIDWithPrefix("container-id")),
 	)
 
-	actualResourceMetrics := GetMetrics(pod, zap.NewNop())
-
-	require.Len(t, actualResourceMetrics, 2)
-	testutils.AssertResource(t, actualResourceMetrics[0].Resource, constants.K8sType,
-		map[string]string{
-			"k8s.pod.uid":        "test-pod-1-uid",
-			"k8s.pod.name":       "test-pod-1",
-			"k8s.node.name":      "test-node",
-			"k8s.namespace.name": "test-namespace",
-		},
+	ts := pcommon.Timestamp(time.Now().UnixNano())
+	mb := metadata.NewMetricsBuilder(metadata.DefaultMetricsBuilderConfig(), receivertest.NewNopSettings(metadata.Type))
+	RecordMetrics(zap.NewNop(), mb, pod, ts)
+	m := mb.Emit()
+	expected, err := golden.ReadMetrics(filepath.Join("testdata", "expected.yaml"))
+	require.NoError(t, err)
+	require.NoError(t, pmetrictest.CompareMetrics(expected, m,
+		pmetrictest.IgnoreTimestamp(),
+		pmetrictest.IgnoreStartTimestamp(),
+		pmetrictest.IgnoreResourceMetricsOrder(),
+		pmetrictest.IgnoreMetricsOrder(),
+		pmetrictest.IgnoreScopeMetricsOrder(),
+	),
 	)
-
-	require.Len(t, actualResourceMetrics[0].Metrics, 1)
-	testutils.AssertMetricsInt(t, actualResourceMetrics[0].Metrics[0], "k8s.pod.phase",
-		metricspb.MetricDescriptor_GAUGE_INT64, 3)
-
-	require.Len(t, actualResourceMetrics[1].Metrics, 4)
-	testutils.AssertResource(t, actualResourceMetrics[1].Resource, "container",
-		map[string]string{
-			"container.id":         "container-id",
-			"k8s.container.name":   "container-name",
-			"container.image.name": "container-image-name",
-			"container.image.tag":  "latest",
-			"k8s.pod.uid":          "test-pod-1-uid",
-			"k8s.pod.name":         "test-pod-1",
-			"k8s.node.name":        "test-node",
-			"k8s.namespace.name":   "test-namespace",
-		},
-	)
-
-	testutils.AssertMetricsInt(t, actualResourceMetrics[1].Metrics[0], "k8s.container.restarts",
-		metricspb.MetricDescriptor_GAUGE_INT64, 3)
-
-	testutils.AssertMetricsInt(t, actualResourceMetrics[1].Metrics[1], "k8s.container.ready",
-		metricspb.MetricDescriptor_GAUGE_INT64, 1)
-
-	testutils.AssertMetricsDouble(t, actualResourceMetrics[1].Metrics[2], "k8s.container.cpu_request",
-		metricspb.MetricDescriptor_GAUGE_DOUBLE, 10.0)
-
-	testutils.AssertMetricsDouble(t, actualResourceMetrics[1].Metrics[3], "k8s.container.cpu_limit",
-		metricspb.MetricDescriptor_GAUGE_DOUBLE, 20.0)
 }
 
-var containerIDWithPreifx = func(containerID string) string {
+func TestPodStatusReasonAndContainerMetricsReportCPUMetrics(t *testing.T) {
+	pod := testutils.NewPodWithContainer(
+		"1",
+		testutils.NewPodSpecWithContainer("container-name"),
+		testutils.NewEvictedTerminatedPodStatusWithContainer("container-name", containerIDWithPrefix("container-id")),
+	)
+
+	mbc := metadata.DefaultMetricsBuilderConfig()
+	mbc.Metrics.K8sPodStatusReason.Enabled = true
+	mbc.ResourceAttributes.K8sPodQosClass.Enabled = true
+	mbc.ResourceAttributes.K8sContainerStatusLastTerminatedReason.Enabled = true
+	ts := pcommon.Timestamp(time.Now().UnixNano())
+	mb := metadata.NewMetricsBuilder(mbc, receivertest.NewNopSettings(metadata.Type))
+	RecordMetrics(zap.NewNop(), mb, pod, ts)
+	m := mb.Emit()
+
+	expected, err := golden.ReadMetrics(filepath.Join("testdata", "expected_evicted.yaml"))
+	require.NoError(t, err)
+	require.NoError(t, pmetrictest.CompareMetrics(expected, m,
+		pmetrictest.IgnoreTimestamp(),
+		pmetrictest.IgnoreStartTimestamp(),
+		pmetrictest.IgnoreResourceMetricsOrder(),
+		pmetrictest.IgnoreMetricsOrder(),
+		pmetrictest.IgnoreScopeMetricsOrder(),
+	),
+	)
+}
+
+var containerIDWithPrefix = func(containerID string) string {
 	return "docker://" + containerID
-}
-
-func TestListResourceMetrics(t *testing.T) {
-	rms := map[string]*agentmetricspb.ExportMetricsServiceRequest{
-		"resource-1": {Resource: &resourcepb.Resource{Type: "type-1"}},
-		"resource-2": {Resource: &resourcepb.Resource{Type: "type-2"}},
-		"resource-3": {Resource: &resourcepb.Resource{Type: "type-1"}},
-	}
-
-	actual := listResourceMetrics(rms)
-	expected := []*agentmetricspb.ExportMetricsServiceRequest{
-		{Resource: &resourcepb.Resource{Type: "type-1"}},
-		{Resource: &resourcepb.Resource{Type: "type-2"}},
-		{Resource: &resourcepb.Resource{Type: "type-1"}},
-	}
-
-	require.ElementsMatch(t, expected, actual)
 }
 
 func TestPhaseToInt(t *testing.T) {
@@ -202,7 +180,7 @@ func TestDataCollectorSyncMetadataForPodWorkloads(t *testing.T) {
 			require.NotNil(t, testCase.metadataStore)
 			require.NotNil(t, testCase.resource)
 
-			observedLogger, logs := observer.New(zapcore.WarnLevel)
+			observedLogger, logs := observer.New(zapcore.DebugLevel)
 			logger := zap.New(observedLogger)
 
 			name := fmt.Sprintf("(%s) - %s", kind, tt.name)
@@ -265,11 +243,13 @@ func expectedKubernetesMetadata(to testCaseOptions) map[experimentalmetricmetada
 
 	out := map[experimentalmetricmetadata.ResourceID]*metadata.KubernetesMetadata{
 		experimentalmetricmetadata.ResourceID(podUIDLabel): {
+			EntityType:    "k8s.pod",
 			ResourceIDKey: "k8s.pod.uid",
 			ResourceID:    experimentalmetricmetadata.ResourceID(podUIDLabel),
 			Metadata: map[string]string{
-				kindNameLabel: kindObjName,
-				kindUIDLabel:  kindObjUID,
+				kindNameLabel:   kindObjName,
+				kindUIDLabel:    kindObjUID,
+				"k8s.pod.phase": "Unknown", // Default value when phase is not set.
 			},
 		},
 	}
@@ -302,20 +282,20 @@ func expectedKubernetesMetadata(to testCaseOptions) map[experimentalmetricmetada
 }
 
 func mockMetadataStore(to testCaseOptions) *metadata.Store {
-	ms := &metadata.Store{}
+	ms := metadata.NewStore()
 
 	if to.wantNilCache {
 		return ms
 	}
 
 	store := &testutils.MockStore{
-		Cache:   map[string]interface{}{},
+		Cache:   map[string]any{},
 		WantErr: to.wantErrFromCache,
 	}
 
 	switch to.kind {
 	case "Job":
-		ms.Jobs = store
+		ms.Setup(gvk.Job, store)
 		if !to.emptyCache {
 			if to.withParentOR {
 				store.Cache["test-namespace/test-job-0"] = testutils.WithOwnerReferences(
@@ -333,7 +313,7 @@ func mockMetadataStore(to testCaseOptions) *metadata.Store {
 		}
 		return ms
 	case "ReplicaSet":
-		ms.ReplicaSets = store
+		ms.Setup(gvk.ReplicaSet, store)
 		if !to.emptyCache {
 			if to.withParentOR {
 				store.Cache["test-namespace/test-replicaset-0"] = testutils.WithOwnerReferences(
@@ -366,4 +346,205 @@ func podWithOwnerReference(kind string) *corev1.Pod {
 			},
 		}, testutils.NewPodWithContainer("0", &corev1.PodSpec{}, &corev1.PodStatus{}),
 	).(*corev1.Pod)
+}
+
+func TestTransform(t *testing.T) {
+	containerState := corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: v1.Now()}}
+	originalPod := &corev1.Pod{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app":     "my-app",
+				"version": "v1",
+			},
+			Annotations: map[string]string{
+				"example.com/annotation": "some-value",
+			},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyAlways,
+			NodeName:      "node-1",
+			HostNetwork:   true,
+			HostIPC:       true,
+			HostPID:       true,
+			DNSPolicy:     corev1.DNSClusterFirst,
+			TerminationGracePeriodSeconds: func() *int64 {
+				gracePeriodSeconds := int64(30)
+				return &gracePeriodSeconds
+			}(),
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsUser:  func() *int64 { uid := int64(1000); return &uid }(),
+				RunAsGroup: func() *int64 { gid := int64(2000); return &gid }(),
+				FSGroup:    func() *int64 { gid := int64(3000); return &gid }(),
+			},
+			Containers: []corev1.Container{
+				{
+					Name:            "my-container",
+					Image:           "nginx:latest",
+					ImagePullPolicy: corev1.PullAlways,
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "http",
+							ContainerPort: 80,
+							Protocol:      corev1.ProtocolTCP,
+						},
+						{
+							Name:          "https",
+							ContainerPort: 443,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "MY_ENV",
+							Value: "my-value",
+						},
+					},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:     corev1.PodRunning,
+			Reason:    "Evicted",
+			HostIP:    "192.168.1.100",
+			PodIP:     "10.244.0.5",
+			StartTime: &v1.Time{Time: v1.Now().Add(-5 * time.Minute)},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "invalid-container",
+					Image:        "redis:latest",
+					RestartCount: 1,
+				},
+				{
+					Name:         "my-container",
+					Image:        "nginx:latest",
+					ContainerID:  "abc12345",
+					RestartCount: 2,
+					Ready:        true,
+					State:        containerState,
+				},
+			},
+		},
+	}
+	wantPod := &corev1.Pod{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app":     "my-app",
+				"version": "v1",
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+			Containers: []corev1.Container{
+				{
+					Name: "my-container",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase:  corev1.PodRunning,
+			Reason: "Evicted",
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "my-container",
+					Image:        "nginx:latest",
+					ContainerID:  "abc12345",
+					RestartCount: 2,
+					Ready:        true,
+					State:        containerState,
+				},
+			},
+		},
+	}
+	assert.Equal(t, wantPod, Transform(originalPod))
+}
+
+func TestPodMetadata(t *testing.T) {
+	tests := []struct {
+		name             string
+		statusPhase      corev1.PodPhase
+		statusReason     string
+		expectedMetadata map[string]string
+	}{
+		{
+			name:         "Pod with status reason",
+			statusPhase:  corev1.PodFailed,
+			statusReason: "Evicted",
+			expectedMetadata: map[string]string{
+				"k8s.pod.phase":         "Failed",
+				"k8s.pod.status_reason": "Evicted",
+				"k8s.workload.kind":     "Deployment",
+				"k8s.workload.name":     "test-deployment-0",
+				"k8s.replicaset.name":   "test-replicaset-0",
+				"k8s.replicaset.uid":    "test-replicaset-0-uid",
+				"k8s.deployment.name":   "test-deployment-0",
+				"k8s.deployment.uid":    "test-deployment-0-uid",
+			},
+		},
+		{
+			name:         "Pod without status reason",
+			statusPhase:  corev1.PodRunning,
+			statusReason: "",
+			expectedMetadata: map[string]string{
+				"k8s.pod.phase":       "Running",
+				"k8s.workload.kind":   "Deployment",
+				"k8s.workload.name":   "test-deployment-0",
+				"k8s.replicaset.name": "test-replicaset-0",
+				"k8s.replicaset.uid":  "test-replicaset-0-uid",
+				"k8s.deployment.name": "test-deployment-0",
+				"k8s.deployment.uid":  "test-deployment-0-uid",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := podWithOwnerReference("ReplicaSet")
+			pod.Status.Phase = tt.statusPhase
+			pod.Status.Reason = tt.statusReason
+
+			metadataStore := mockMetadataStore(testCaseOptions{
+				kind:         "ReplicaSet",
+				withParentOR: true,
+			})
+			logger := zap.NewNop()
+			meta := GetMetadata(pod, metadataStore, logger)
+
+			require.NotNil(t, meta)
+			require.Contains(t, meta, experimentalmetricmetadata.ResourceID("test-pod-0-uid"))
+			podMeta := meta["test-pod-0-uid"].Metadata
+
+			allExpectedMetadata := make(map[string]string)
+			for key, value := range commonPodMetadata {
+				allExpectedMetadata[key] = value
+			}
+			for key, value := range tt.expectedMetadata {
+				allExpectedMetadata[key] = value
+			}
+			assert.Equal(t, allExpectedMetadata, podMeta)
+		})
+	}
 }

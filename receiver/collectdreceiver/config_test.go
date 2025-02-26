@@ -1,20 +1,10 @@
-// Copyright 2019, OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package collectdreceiver
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,8 +12,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config/confignet"
+	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/collectdreceiver/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -32,21 +25,23 @@ func TestLoadConfig(t *testing.T) {
 	tests := []struct {
 		id       component.ID
 		expected component.Config
+		wantErr  error
 	}{
 		{
-			id:       component.NewIDWithName(typeStr, ""),
+			id:       component.NewIDWithName(metadata.Type, ""),
 			expected: createDefaultConfig(),
 		},
 		{
-			id: component.NewIDWithName(typeStr, "one"),
+			id: component.NewIDWithName(metadata.Type, "one"),
 			expected: &Config{
-				TCPAddr: confignet.TCPAddr{
+				ServerConfig: confighttp.ServerConfig{
 					Endpoint: "localhost:12345",
 				},
-				Timeout:          time.Second * 50,
+				Timeout:          50 * time.Second,
 				AttributesPrefix: "dap_",
 				Encoding:         "command",
 			},
+			wantErr: errors.New("CollectD only support JSON encoding format. command is not supported"),
 		},
 	}
 
@@ -60,9 +55,13 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			if tt.wantErr == nil {
+				assert.NoError(t, xconfmap.Validate(cfg))
+			} else {
+				assert.ErrorContains(t, xconfmap.Validate(cfg), tt.wantErr.Error())
+			}
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}

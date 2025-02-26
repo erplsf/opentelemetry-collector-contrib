@@ -1,7 +1,9 @@
-type: zipkinreceiver
+type: zipkin
 
 status:
   class: receiver
-  stability: beta
-  pipelines: [traces]
-  distributions: [core, contrib]
+  stability:
+    beta: [traces]
+  distributions: [core, contrib, k8s]
+  codeowners:
+    active: [MovieStoreGuy, andrzej-stencel, crobert-1]

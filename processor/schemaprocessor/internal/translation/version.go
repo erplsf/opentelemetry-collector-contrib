@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package translation // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/schemaprocessor/internal/translation"
 
@@ -28,6 +17,17 @@ const separator = "."
 var (
 	ErrInvalidFamily  = errors.New("invalid schema family")
 	ErrInvalidVersion = errors.New("invalid schema version")
+)
+
+// The following status values define whether the transformer
+// has to revert changes or update changes to the signal being modified
+// These values match the Version.Compare out when performing:
+//
+//	from.Compare(to) // ie: (1.0.0).Compare(1.2.1)
+const (
+	Update   int = -1 // From is less than To
+	NoChange int = 0  // From equals To
+	Revert   int = 1  // From is greater than To
 )
 
 // Version is a machine readable version of the string
@@ -70,6 +70,15 @@ func GetFamilyAndVersion(schemaURL string) (family string, version *Version, err
 	}
 
 	return u.String(), version, err
+}
+
+func joinSchemaFamilyAndVersion(family string, version *Version) string { //nolint: unparam
+	u, err := url.Parse(family)
+	if err != nil {
+		return ""
+	}
+	u.Path = path.Join(u.Path, version.String())
+	return u.String()
 }
 
 // NewVersion converts a near semver like string (ie 1.4.0) into

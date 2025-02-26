@@ -1,22 +1,12 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package awscontainerinsightreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awscontainerinsightreceiver"
 
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -37,6 +27,7 @@ var _ receiver.Metrics = (*awsContainerInsightReceiver)(nil)
 
 type metricsProvider interface {
 	GetMetrics() []pmetric.Metrics
+	Shutdown() error
 }
 
 // awsContainerInsightReceiver implements the receiver.Metrics
@@ -45,6 +36,7 @@ type awsContainerInsightReceiver struct {
 	nextConsumer consumer.Metrics
 	config       *Config
 	cancel       context.CancelFunc
+	cancelWg     sync.WaitGroup
 	cadvisor     metricsProvider
 	k8sapiserver metricsProvider
 }
@@ -53,11 +45,8 @@ type awsContainerInsightReceiver struct {
 func newAWSContainerInsightReceiver(
 	settings component.TelemetrySettings,
 	config *Config,
-	nextConsumer consumer.Metrics) (receiver.Metrics, error) {
-	if nextConsumer == nil {
-		return nil, component.ErrNilNextConsumer
-	}
-
+	nextConsumer consumer.Metrics,
+) (receiver.Metrics, error) {
 	r := &awsContainerInsightReceiver{
 		settings:     settings,
 		nextConsumer: nextConsumer,
@@ -92,7 +81,6 @@ func (acir *awsContainerInsightReceiver) Start(ctx context.Context, host compone
 		}
 	}
 	if acir.config.ContainerOrchestrator == ci.ECS {
-
 		ecsInfo, err := ecsinfo.NewECSInfo(acir.config.CollectionInterval, hostinfo, host, acir.settings)
 		if err != nil {
 			return err
@@ -106,7 +94,10 @@ func (acir *awsContainerInsightReceiver) Start(ctx context.Context, host compone
 		}
 	}
 
+	acir.cancelWg.Add(1)
 	go func() {
+		defer acir.cancelWg.Done()
+
 		// cadvisor collects data at dynamical intervals (from 1 to 15 seconds). If the ticker happens
 		// at beginning of a minute, it might read the data collected at end of last minute. To avoid this,
 		// we want to wait until at least two cadvisor collection intervals happens before collecting the metrics
@@ -136,10 +127,21 @@ func (acir *awsContainerInsightReceiver) Shutdown(context.Context) error {
 		return nil
 	}
 	acir.cancel()
-	return nil
+	acir.cancelWg.Wait()
+
+	var errs error
+
+	if acir.k8sapiserver != nil {
+		errs = errors.Join(errs, acir.k8sapiserver.Shutdown())
+	}
+	if acir.cadvisor != nil {
+		errs = errors.Join(errs, acir.cadvisor.Shutdown())
+	}
+
+	return errs
 }
 
-// collectData collects container stats from Amazon ECS Task Metadata Endpoint
+// collectData collects container stats from cAdvisor and k8s api server (if it is an elected leader)
 func (acir *awsContainerInsightReceiver) collectData(ctx context.Context) error {
 	var mds []pmetric.Metrics
 	if acir.cadvisor == nil && acir.k8sapiserver == nil {

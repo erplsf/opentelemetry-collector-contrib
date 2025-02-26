@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 //go:build integration
 
@@ -37,8 +26,9 @@ import (
 	"go.opentelemetry.io/collector/receiver/receivertest"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/testutil"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver/internal/metadata"
 )
 
 const (
@@ -50,7 +40,7 @@ var testPayloads = []string{
 	"multiple_log_payload",
 }
 
-func TestReceiverTLS(t *testing.T) {
+func TestReceiverTLSIntegration(t *testing.T) {
 	for _, payloadName := range testPayloads {
 		t.Run(payloadName, func(t *testing.T) {
 			testAddr := testutil.GetAvailableLocalAddress(t)
@@ -60,15 +50,15 @@ func TestReceiverTLS(t *testing.T) {
 			_, testPort, err := net.SplitHostPort(testAddr)
 			require.NoError(t, err)
 
-			recv, err := fact.CreateLogsReceiver(
+			recv, err := fact.CreateLogs(
 				context.Background(),
-				receivertest.NewNopCreateSettings(),
+				receivertest.NewNopSettings(metadata.Type),
 				&Config{
 					Logs: LogsConfig{
 						Secret:   testSecret,
 						Endpoint: testAddr,
-						TLS: &configtls.TLSServerSetting{
-							TLSSetting: configtls.TLSSetting{
+						TLS: &configtls.ServerConfig{
+							Config: configtls.Config{
 								CertFile: filepath.Join("testdata", "cert", "server.crt"),
 								KeyFile:  filepath.Join("testdata", "cert", "server.key"),
 							},
@@ -93,7 +83,7 @@ func TestReceiverTLS(t *testing.T) {
 			payload, err := os.ReadFile(filepath.Join("testdata", "sample-payloads", fmt.Sprintf("%s.txt", payloadName)))
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("POST", fmt.Sprintf("https://localhost:%s", testPort), bytes.NewBuffer(payload))
+			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://localhost:%s", testPort), bytes.NewBuffer(payload))
 			require.NoError(t, err)
 
 			client, err := clientWithCert(filepath.Join("testdata", "cert", "ca.crt"))
@@ -119,10 +109,10 @@ func TestReceiverTLS(t *testing.T) {
 
 			logs := sink.AllLogs()[0]
 
-			expectedLogs, err := golden.ReadLogs(filepath.Join("testdata", "processed", fmt.Sprintf("%s.json", payloadName)))
+			expectedLogs, err := golden.ReadLogs(filepath.Join("testdata", "processed", fmt.Sprintf("%s.yaml", payloadName)))
 			require.NoError(t, err)
 
-			require.NoError(t, plogtest.CompareLogs(expectedLogs, logs, plogtest.IgnoreObservedTimestamp()))
+			require.NoError(t, plogtest.CompareLogs(expectedLogs, logs, plogtest.IgnoreObservedTimestamp(), plogtest.IgnoreResourceLogsOrder()))
 		})
 	}
 }
@@ -136,7 +126,7 @@ func clientWithCert(path string) (*http.Client, error) {
 	roots := x509.NewCertPool()
 	ok := roots.AppendCertsFromPEM(b)
 	if !ok {
-		return nil, errors.New("failed to append certficate as root certificate")
+		return nil, errors.New("failed to append certificate as root certificate")
 	}
 
 	return &http.Client{

@@ -6,7 +6,13 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("sumologic")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/sumologicexporter"
+)
+
 const (
-	Type      = "sumologic"
-	Stability = component.StabilityLevelBeta
+	MetricsStability = component.StabilityLevelBeta
+	LogsStability    = component.StabilityLevelBeta
+	TracesStability  = component.StabilityLevelBeta
 )

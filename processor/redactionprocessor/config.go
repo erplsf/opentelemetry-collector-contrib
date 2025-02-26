@@ -1,21 +1,9 @@
-// Copyright  OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
 
 package redactionprocessor // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor"
 
 type Config struct {
-
 	// AllowAllKeys is a flag to allow all span attribute keys. Setting this
 	// to true disables the AllowedKeys list. The list of BlockedValues is
 	// applied regardless. If you just want to block values, set this to true.
@@ -26,14 +14,22 @@ type Config struct {
 	// allow all keys, you should explicitly set AllowAllKeys
 	AllowedKeys []string `mapstructure:"allowed_keys"`
 
+	// BlockedKeyPatterns is a list of blocked span attribute key patterns. Span attributes
+	// matching the regexes on the list are masked.
+	BlockedKeyPatterns []string `mapstructure:"blocked_key_patterns"`
+
 	// IgnoredKeys is a list of span attribute keys that are not redacted.
 	// Span attributes in this list are allowed to pass through the filter
 	// without being changed or removed.
 	IgnoredKeys []string `mapstructure:"ignored_keys"`
 
 	// BlockedValues is a list of regular expressions for blocking values of
-	// allowed span attributes. Values that match are masked
+	// allowed span attributes. Values that match are masked.
 	BlockedValues []string `mapstructure:"blocked_values"`
+
+	// AllowedValues is a list of regular expressions for allowing values of
+	// blocked span attributes. Values that match are not masked.
+	AllowedValues []string `mapstructure:"allowed_values"`
 
 	// Summary controls the verbosity level of the diagnostic attributes that
 	// the processor adds to the spans when it redacts or masks other

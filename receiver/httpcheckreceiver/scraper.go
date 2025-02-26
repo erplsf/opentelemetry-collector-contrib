@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package httpcheckreceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/httpcheckreceiver"
 
@@ -18,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
+	"go.uber.org/multierr"
+	"go.uber.org/zap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/httpcheckreceiver/internal/metadata"
 )
@@ -34,55 +26,133 @@ var (
 )
 
 type httpcheckScraper struct {
-	client   *http.Client
+	clients  []*http.Client
 	cfg      *Config
 	settings component.TelemetrySettings
 	mb       *metadata.MetricsBuilder
 }
 
-// start starts the scraper by creating a new HTTP Client on the scraper
+// start initializes the scraper by creating HTTP clients for each endpoint.
 func (h *httpcheckScraper) start(ctx context.Context, host component.Host) (err error) {
-	h.client, err = h.cfg.ToClient(host, h.settings)
+	var expandedTargets []*targetConfig
+
+	for _, target := range h.cfg.Targets {
+		// Create a unified list of endpoints
+		var allEndpoints []string
+		if len(target.Endpoints) > 0 {
+			allEndpoints = append(allEndpoints, target.Endpoints...) // Add all endpoints
+		}
+		if target.ClientConfig.Endpoint != "" {
+			allEndpoints = append(allEndpoints, target.ClientConfig.Endpoint) // Add single endpoint
+		}
+
+		// Process each endpoint in the unified list
+		for _, endpoint := range allEndpoints {
+			client, clientErr := target.ToClient(ctx, host, h.settings)
+			if clientErr != nil {
+				h.settings.Logger.Error("failed to initialize HTTP client", zap.String("endpoint", endpoint), zap.Error(clientErr))
+				err = multierr.Append(err, clientErr)
+				continue
+			}
+
+			// Clone the target and assign the specific endpoint
+			targetClone := *target
+			targetClone.ClientConfig.Endpoint = endpoint
+
+			h.clients = append(h.clients, client)
+			expandedTargets = append(expandedTargets, &targetClone) // Add the cloned target to expanded targets
+		}
+	}
+
+	h.cfg.Targets = expandedTargets // Replace targets with expanded targets
 	return
 }
 
-// scrape connects to the endpoint and produces metrics based on the response
+// scrape performs the HTTP checks and records metrics based on responses.
 func (h *httpcheckScraper) scrape(ctx context.Context) (pmetric.Metrics, error) {
-	if h.client == nil {
+	if len(h.clients) == 0 {
 		return pmetric.NewMetrics(), errClientNotInit
 	}
 
-	now := pcommon.NewTimestampFromTime(time.Now())
+	var wg sync.WaitGroup
+	wg.Add(len(h.clients))
+	var mux sync.Mutex
 
-	req, err := http.NewRequestWithContext(ctx, h.cfg.Method, h.cfg.Endpoint, http.NoBody)
-	if err != nil {
-		return pmetric.Metrics{}, err
+	for idx, client := range h.clients {
+		go func(targetClient *http.Client, targetIndex int) {
+			defer wg.Done()
+
+			now := pcommon.NewTimestampFromTime(time.Now())
+
+			req, err := http.NewRequestWithContext(
+				ctx,
+				h.cfg.Targets[targetIndex].Method,
+				h.cfg.Targets[targetIndex].ClientConfig.Endpoint, // Use the ClientConfig.Endpoint
+				http.NoBody,
+			)
+			if err != nil {
+				h.settings.Logger.Error("failed to create request", zap.Error(err))
+				return
+			}
+
+			// Add headers to the request
+			for key, value := range h.cfg.Targets[targetIndex].Headers {
+				req.Header.Set(key, value.String()) // Convert configopaque.String to string
+			}
+
+			// Send the request and measure response time
+			start := time.Now()
+			resp, err := targetClient.Do(req)
+			mux.Lock()
+			h.mb.RecordHttpcheckDurationDataPoint(
+				now,
+				time.Since(start).Milliseconds(),
+				h.cfg.Targets[targetIndex].ClientConfig.Endpoint, // Use the correct endpoint
+			)
+
+			statusCode := 0
+			if err != nil {
+				h.mb.RecordHttpcheckErrorDataPoint(
+					now,
+					int64(1),
+					h.cfg.Targets[targetIndex].ClientConfig.Endpoint,
+					err.Error(),
+				)
+			} else {
+				statusCode = resp.StatusCode
+			}
+
+			// Record HTTP status class metrics
+			for class, intVal := range httpResponseClasses {
+				if statusCode/100 == intVal {
+					h.mb.RecordHttpcheckStatusDataPoint(
+						now,
+						int64(1),
+						h.cfg.Targets[targetIndex].ClientConfig.Endpoint,
+						int64(statusCode),
+						req.Method,
+						class,
+					)
+				} else {
+					h.mb.RecordHttpcheckStatusDataPoint(
+						now,
+						int64(0),
+						h.cfg.Targets[targetIndex].ClientConfig.Endpoint,
+						int64(statusCode),
+						req.Method,
+						class,
+					)
+				}
+			}
+			mux.Unlock()
+		}(client, idx)
 	}
 
-	start := time.Now()
-	resp, err := h.client.Do(req)
-	h.mb.RecordHttpcheckDurationDataPoint(now, time.Since(start).Milliseconds(), h.cfg.Endpoint)
-
-	statusCode := 0
-	if err != nil {
-		h.mb.RecordHttpcheckErrorDataPoint(now, int64(1), h.cfg.Endpoint, err.Error())
-	} else {
-		statusCode = resp.StatusCode
-	}
-
-	for class, intVal := range httpResponseClasses {
-		if statusCode/100 == intVal {
-			h.mb.RecordHttpcheckStatusDataPoint(now, int64(1), h.cfg.Endpoint, int64(statusCode), req.Method, class)
-		} else {
-			h.mb.RecordHttpcheckStatusDataPoint(now, int64(0), h.cfg.Endpoint, int64(statusCode), req.Method, class)
-		}
-
-	}
-
+	wg.Wait()
 	return h.mb.Emit(), nil
 }
 
-func newScraper(conf *Config, settings receiver.CreateSettings) *httpcheckScraper {
+func newScraper(conf *Config, settings receiver.Settings) *httpcheckScraper {
 	return &httpcheckScraper{
 		cfg:      conf,
 		settings: settings.TelemetrySettings,

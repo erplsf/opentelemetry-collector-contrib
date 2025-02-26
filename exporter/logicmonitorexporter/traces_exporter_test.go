@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package logicmonitorexporter
 
@@ -27,24 +16,26 @@ import (
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter/internal/metadata"
 )
 
 func Test_NewTracesExporter(t *testing.T) {
 	t.Run("should create Traces exporter", func(t *testing.T) {
 		config := &Config{
-			HTTPClientSettings: confighttp.HTTPClientSettings{
+			ClientConfig: confighttp.ClientConfig{
 				Endpoint: "http://example.logicmonitor.com/rest",
 			},
 			APIToken: APIToken{AccessID: "testid", AccessKey: "testkey"},
 		}
-		set := exportertest.NewNopCreateSettings()
+		set := exportertest.NewNopSettings(metadata.Type)
 		exp := newTracesExporter(context.Background(), config, set)
 		assert.NotNil(t, exp)
 	})
 }
 
 func TestPushTraceData(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := lmsdktraces.LMTraceIngestResponse{
 			Success: true,
 			Message: "",
@@ -53,18 +44,19 @@ func TestPushTraceData(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	params := exportertest.NewNopCreateSettings()
+	params := exportertest.NewNopSettings(metadata.Type)
 	f := NewFactory()
 	config := &Config{
-		HTTPClientSettings: confighttp.HTTPClientSettings{
+		ClientConfig: confighttp.ClientConfig{
 			Endpoint: ts.URL,
 		},
 		APIToken: APIToken{AccessID: "testid", AccessKey: "testkey"},
 	}
 	ctx := context.Background()
-	exp, err := f.CreateTracesExporter(ctx, params, config)
+	exp, err := f.CreateTraces(ctx, params, config)
 	assert.NoError(t, err)
 	assert.NoError(t, exp.Start(ctx, componenttest.NewNopHost()))
+	defer func() { assert.NoError(t, exp.Shutdown(ctx)) }()
 
 	testTraces := ptrace.NewTraces()
 	generateTraces().CopyTo(testTraces)

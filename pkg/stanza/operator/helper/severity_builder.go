@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package helper // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator/helper"
 
@@ -19,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
+	"go.opentelemetry.io/collector/component"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/entry"
 )
@@ -122,13 +111,14 @@ func NewSeverityConfig() SeverityConfig {
 
 // SeverityConfig allows users to specify how to parse a severity from a field.
 type SeverityConfig struct {
-	ParseFrom *entry.Field           `mapstructure:"parse_from,omitempty"`
-	Preset    string                 `mapstructure:"preset,omitempty"`
-	Mapping   map[string]interface{} `mapstructure:"mapping,omitempty"`
+	ParseFrom     *entry.Field   `mapstructure:"parse_from,omitempty"`
+	Preset        string         `mapstructure:"preset,omitempty"`
+	Mapping       map[string]any `mapstructure:"mapping,omitempty"`
+	OverwriteText bool           `mapstructure:"overwrite_text,omitempty"`
 }
 
 // Build builds a SeverityParser from a SeverityConfig
-func (c *SeverityConfig) Build(logger *zap.SugaredLogger) (SeverityParser, error) {
+func (c *SeverityConfig) Build(_ component.TelemetrySettings) (SeverityParser, error) {
 	operatorMapping := getBuiltinMapping(c.Preset)
 
 	for severity, unknown := range c.Mapping {
@@ -138,7 +128,7 @@ func (c *SeverityConfig) Build(logger *zap.SugaredLogger) (SeverityParser, error
 		}
 
 		switch u := unknown.(type) {
-		case []interface{}: // check before interface{}
+		case []any: // check before any
 			for _, value := range u {
 				v, err := parseableValues(value)
 				if err != nil {
@@ -146,7 +136,7 @@ func (c *SeverityConfig) Build(logger *zap.SugaredLogger) (SeverityParser, error
 				}
 				operatorMapping.add(sev, v...)
 			}
-		case interface{}:
+		case any:
 			v, err := parseableValues(u)
 			if err != nil {
 				return SeverityParser{}, err
@@ -160,32 +150,33 @@ func (c *SeverityConfig) Build(logger *zap.SugaredLogger) (SeverityParser, error
 	}
 
 	p := SeverityParser{
-		ParseFrom: *c.ParseFrom,
-		Mapping:   operatorMapping,
+		ParseFrom:     *c.ParseFrom,
+		Mapping:       operatorMapping,
+		overwriteText: c.OverwriteText,
 	}
 
 	return p, nil
 }
 
-func validateSeverity(severity interface{}) (entry.Severity, error) {
+func validateSeverity(severity any) (entry.Severity, error) {
 	sev, _, err := getBuiltinMapping("aliases").find(severity)
 	return sev, err
 }
 
-func isRange(value interface{}) (int, int, bool) {
-	rawMap, ok := value.(map[string]interface{})
+func isRange(value any) (int, int, bool) {
+	rawMap, ok := value.(map[string]any)
 	if !ok {
 		return 0, 0, false
 	}
 
-	min, minOK := rawMap["min"]
-	max, maxOK := rawMap["max"]
+	minVal, minOK := rawMap["min"]
+	maxVal, maxOK := rawMap["max"]
 	if !minOK || !maxOK {
 		return 0, 0, false
 	}
 
-	minInt, minOK := min.(int)
-	maxInt, maxOK := max.(int)
+	minInt, minOK := minVal.(int)
+	maxInt, maxOK := maxVal.(int)
 	if !minOK || !maxOK {
 		return 0, 0, false
 	}
@@ -193,19 +184,19 @@ func isRange(value interface{}) (int, int, bool) {
 	return minInt, maxInt, true
 }
 
-func expandRange(min, max int) []string {
-	if min > max {
-		min, max = max, min
+func expandRange(minR, maxR int) []string {
+	if minR > maxR {
+		minR, maxR = maxR, minR
 	}
 
 	var rangeOfStrings []string
-	for i := min; i <= max; i++ {
+	for i := minR; i <= maxR; i++ {
 		rangeOfStrings = append(rangeOfStrings, strconv.Itoa(i))
 	}
 	return rangeOfStrings
 }
 
-func parseableValues(value interface{}) ([]string, error) {
+func parseableValues(value any) ([]string, error) {
 	switch v := value.(type) {
 	case int:
 		return []string{strconv.Itoa(v)}, nil // store as string because we will compare as string
@@ -225,9 +216,9 @@ func parseableValues(value interface{}) ([]string, error) {
 	case []byte:
 		return []string{strings.ToLower(string(v))}, nil
 	default:
-		min, max, ok := isRange(v)
+		minVal, maxVal, ok := isRange(v)
 		if ok {
-			return expandRange(min, max), nil
+			return expandRange(minVal, maxVal), nil
 		}
 		return nil, fmt.Errorf("type %T cannot be parsed as a severity", v)
 	}

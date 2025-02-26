@@ -6,7 +6,11 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+var (
+	Type      = component.MustNewType("httpcheck")
+	ScopeName = "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/httpcheckreceiver"
+)
+
 const (
-	Type      = "httpcheckreceiver"
-	Stability = component.StabilityLevelDevelopment
+	MetricsStability = component.StabilityLevelAlpha
 )

@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package routingprocessor
 
@@ -22,8 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/confmap/xconfmap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/routingprocessor/internal/metadata"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -34,7 +25,7 @@ func TestLoadConfig(t *testing.T) {
 	}{
 		{
 			configPath: "config_traces.yaml",
-			id:         component.NewIDWithName(typeStr, ""),
+			id:         component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
 				DefaultExporters: []string{"otlp"},
 				AttributeSource:  "context",
@@ -54,7 +45,7 @@ func TestLoadConfig(t *testing.T) {
 		},
 		{
 			configPath: "config_metrics.yaml",
-			id:         component.NewIDWithName(typeStr, ""),
+			id:         component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
 				DefaultExporters: []string{"logging/default"},
 				AttributeSource:  "context",
@@ -74,7 +65,7 @@ func TestLoadConfig(t *testing.T) {
 		},
 		{
 			configPath: "config_logs.yaml",
-			id:         component.NewIDWithName(typeStr, ""),
+			id:         component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
 				DefaultExporters: []string{"logging/default"},
 				AttributeSource:  "context",
@@ -94,7 +85,7 @@ func TestLoadConfig(t *testing.T) {
 		},
 		{
 			configPath: "config.yaml",
-			id:         component.NewIDWithName(typeStr, ""),
+			id:         component.NewIDWithName(metadata.Type, ""),
 			expected: &Config{
 				DefaultExporters: []string{"jaeger"},
 				AttributeSource:  resourceAttributeSource,
@@ -110,7 +101,7 @@ func TestLoadConfig(t *testing.T) {
 		},
 		{
 			configPath: "config.yaml",
-			id:         component.NewIDWithName(typeStr, "ottl"),
+			id:         component.NewIDWithName(metadata.Type, "ottl"),
 			expected: &Config{
 				DefaultExporters: []string{"jaeger"},
 				ErrorMode:        ottl.PropagateError,
@@ -120,7 +111,7 @@ func TestLoadConfig(t *testing.T) {
 						Exporters: []string{"jaeger/acme"},
 					},
 					{
-						Statement: "delete_key(resource.attributes, \"X-Tenant\") where IsMatch(resource.attributes[\"X-Tenant\"], \".*corp\") == true",
+						Statement: "delete_key(resource.attributes, \"X-Tenant\") where IsMatch(resource.attributes[\"X-Tenant\"], \".*corp\")",
 						Exporters: []string{"jaeger/ecorp"},
 					},
 				},
@@ -138,9 +129,9 @@ func TestLoadConfig(t *testing.T) {
 
 			sub, err := cm.Sub(tt.id.String())
 			require.NoError(t, err)
-			require.NoError(t, component.UnmarshalConfig(sub, cfg))
+			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
@@ -199,7 +190,7 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.EqualError(t, component.ValidateConfig(tt.config), tt.error)
+			assert.EqualError(t, xconfmap.Validate(tt.config), tt.error)
 		})
 	}
 }
@@ -207,12 +198,12 @@ func TestValidateConfig(t *testing.T) {
 func TestRewriteLegacyConfigToOTTL(t *testing.T) {
 	tests := []struct {
 		name   string
-		config Config
+		config *Config
 		want   Config
 	}{
 		{
 			name: "rewrite routing by resource attribute",
-			config: Config{
+			config: &Config{
 				FromAttribute:   "attr",
 				AttributeSource: resourceAttributeSource,
 				Table: []RoutingTableItem{
@@ -233,7 +224,7 @@ func TestRewriteLegacyConfigToOTTL(t *testing.T) {
 		},
 		{
 			name: "rewrite routing by resource attribute multiple entries",
-			config: Config{
+			config: &Config{
 				FromAttribute:   "attr",
 				AttributeSource: resourceAttributeSource,
 				Table: []RoutingTableItem{
@@ -262,7 +253,7 @@ func TestRewriteLegacyConfigToOTTL(t *testing.T) {
 		},
 		{
 			name: "rewrite routing by resource attribute with dropping routing key",
-			config: Config{
+			config: &Config{
 				FromAttribute:                "attr",
 				AttributeSource:              resourceAttributeSource,
 				DropRoutingResourceAttribute: true,
@@ -284,7 +275,7 @@ func TestRewriteLegacyConfigToOTTL(t *testing.T) {
 		},
 		{
 			name: "rewrite routing with context as attribute source",
-			config: Config{
+			config: &Config{
 				FromAttribute:   "attr",
 				AttributeSource: contextAttributeSource,
 				Table: []RoutingTableItem{
@@ -307,7 +298,7 @@ func TestRewriteLegacyConfigToOTTL(t *testing.T) {
 		},
 		{
 			name: "rewrite routing by resource attribute with mixed routing entries",
-			config: Config{
+			config: &Config{
 				FromAttribute:   "attr",
 				AttributeSource: resourceAttributeSource,
 				Table: []RoutingTableItem{
@@ -337,7 +328,7 @@ func TestRewriteLegacyConfigToOTTL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, *rewriteRoutingEntriesToOTTL(&tt.config))
+			assert.Equal(t, tt.want, *rewriteRoutingEntriesToOTTL(tt.config))
 		})
 	}
 }

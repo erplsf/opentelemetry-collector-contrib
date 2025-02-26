@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package solacereceiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/solacereceiver"
 
@@ -21,16 +10,15 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pipeline"
 	"go.opentelemetry.io/collector/receiver"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/solacereceiver/internal/metadata"
 )
 
 const (
-	componentType component.Type = "solace"
-	// The stability level of the receiver.
-	stability = component.StabilityLevelDevelopment
-
-	// default value for max unaked messages
-	defaultMaxUnaked int32 = 1000
+	// default value for max unacked messages
+	defaultMaxUnacked int32 = 1000
 	// default value for host
 	defaultHost string = "localhost:5671"
 )
@@ -38,9 +26,9 @@ const (
 // NewFactory creates a factory for Solace receiver.
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
-		componentType,
+		metadata.Type,
 		createDefaultConfig,
-		receiver.WithTraces(createTracesReceiver, stability),
+		receiver.WithTraces(createTracesReceiver, metadata.TracesStability),
 	)
 }
 
@@ -48,9 +36,9 @@ func NewFactory() receiver.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		Broker:     []string{defaultHost},
-		MaxUnacked: defaultMaxUnaked,
+		MaxUnacked: defaultMaxUnacked,
 		Auth:       Authentication{},
-		TLS: configtls.TLSClientSetting{
+		TLS: configtls.ClientConfig{
 			InsecureSkipVerify: false,
 			Insecure:           false,
 		},
@@ -62,16 +50,16 @@ func createDefaultConfig() component.Config {
 	}
 }
 
-// CreateTracesReceiver creates a trace receiver based on provided config. Component is not shared
+// CreateTraces creates a trace receiver based on provided config. Component is not shared
 func createTracesReceiver(
 	_ context.Context,
-	params receiver.CreateSettings,
+	params receiver.Settings,
 	receiverConfig component.Config,
 	nextConsumer consumer.Traces,
 ) (receiver.Traces, error) {
 	cfg, ok := receiverConfig.(*Config)
 	if !ok {
-		return nil, component.ErrDataTypeIsNotSupported
+		return nil, pipeline.ErrSignalNotSupported
 	}
 	// pass cfg, params and next consumer through
 	return newTracesReceiver(cfg, params, nextConsumer)

@@ -2,7 +2,11 @@ type: cumulativetodelta
 
 status:
   class: processor
-  stability: beta
-  pipelines: [metrics]
-  distributions: [contrib]
+  stability:
+    beta: [metrics]
+  distributions: [contrib, k8s]
   warnings: [Statefulness]
+  codeowners:
+    active: [TylerHelmuth]
+tests:
+  config:

@@ -1,7 +1,15 @@
-type: otlpjsonfilereceiver
+type: otlpjsonfile
 
 status:
   class: receiver
-  stability: alpha
-  pipelines: [logs, metrics, traces]
+  stability:
+    alpha: [traces, metrics, logs]
+    development: [profiles]
   distributions: [contrib]
+  codeowners:
+    active: [atoulme]
+    seeking_new: true
+tests:
+  config:
+    include:
+      - "/tmp/*.log"

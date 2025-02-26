@@ -1,23 +1,16 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package common // import "github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor/internal/common"
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl"
 )
+
+var _ ottl.StatementsGetter = (*ContextStatements)(nil)
 
 type ContextID string
 
@@ -44,5 +37,25 @@ func (c *ContextID) UnmarshalText(text []byte) error {
 
 type ContextStatements struct {
 	Context    ContextID `mapstructure:"context"`
+	Conditions []string  `mapstructure:"conditions"`
 	Statements []string  `mapstructure:"statements"`
+	// ErrorMode determines how the processor reacts to errors that occur while processing
+	// this group of statements. When provided, it overrides the default Config ErrorMode.
+	ErrorMode ottl.ErrorMode `mapstructure:"error_mode"`
+	// `SharedCache` is an experimental feature that may change or be removed in the future.
+	// When enabled, it allows the statements cache to be shared across all other groups that share the cache.
+	// This feature is not configurable via `mapstructure` and cannot be set in configuration files.
+	SharedCache bool `mapstructure:"-"`
+}
+
+func (c ContextStatements) GetStatements() []string {
+	return c.Statements
+}
+
+func toContextStatements(statements any) (*ContextStatements, error) {
+	contextStatements, ok := statements.(ContextStatements)
+	if !ok {
+		return nil, fmt.Errorf("invalid context statements type, expected: common.ContextStatements, got: %T", statements)
+	}
+	return &contextStatements, nil
 }

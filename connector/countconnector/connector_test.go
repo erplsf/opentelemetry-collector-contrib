@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package countconnector
 
@@ -25,7 +14,8 @@ import (
 	"go.opentelemetry.io/collector/connector/connectortest"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal/golden"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/countconnector/internal/metadata"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/golden"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/pmetrictest"
 )
 
@@ -261,7 +251,7 @@ func TestTracesToMetrics(t *testing.T) {
 			factory := NewFactory()
 			sink := &consumertest.MetricsSink{}
 			conn, err := factory.CreateTracesToMetrics(context.Background(),
-				connectortest.NewNopCreateSettings(), tc.cfg, sink)
+				connectortest.NewNopSettings(metadata.Type), tc.cfg, sink)
 			require.NoError(t, err)
 			require.NotNil(t, conn)
 			assert.False(t, conn.Capabilities().MutatesData)
@@ -276,7 +266,7 @@ func TestTracesToMetrics(t *testing.T) {
 			assert.NoError(t, conn.ConsumeTraces(context.Background(), testSpans))
 
 			allMetrics := sink.AllMetrics()
-			assert.Equal(t, 1, len(allMetrics))
+			assert.Len(t, allMetrics, 1)
 
 			// golden.WriteMetrics(t, filepath.Join("testdata", "traces", tc.name+".yaml"), allMetrics[0])
 			expected, err := golden.ReadMetrics(filepath.Join("testdata", "traces", tc.name+".yaml"))
@@ -299,7 +289,7 @@ func TestTracesToMetrics(t *testing.T) {
 //   - (no attributes)
 //
 // - The size metrics have the following sets of types:
-//   - int gauge, double gauge, int sum, double sum, historgram, summary
+//   - int gauge, double gauge, int sum, double sum, histogram, summary
 //
 // - The four data points on each metric have the following sets of attributes:
 //   - datapoint.required: foo, datapoint.optional: bar
@@ -461,6 +451,40 @@ func TestMetricsToMetrics(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "int_attribute_value",
+			cfg: &Config{
+				DataPoints: map[string]MetricInfo{
+					"datapoint.count.by_attr": {
+						Description: "Data point count by int attribute",
+						Attributes: []AttributeConfig{
+							{
+								Key: "datapoint.int",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "default_int_attribute_value",
+			cfg: &Config{
+				DataPoints: map[string]MetricInfo{
+					"datapoint.count.by_attr": {
+						Description: "Data point count by default int attribute",
+						Attributes: []AttributeConfig{
+							{
+								Key: "datapoint.int",
+							},
+							{
+								Key:          "datapoint.optional_int",
+								DefaultValue: 10,
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -469,7 +493,7 @@ func TestMetricsToMetrics(t *testing.T) {
 			factory := NewFactory()
 			sink := &consumertest.MetricsSink{}
 			conn, err := factory.CreateMetricsToMetrics(context.Background(),
-				connectortest.NewNopCreateSettings(), tc.cfg, sink)
+				connectortest.NewNopSettings(metadata.Type), tc.cfg, sink)
 			require.NoError(t, err)
 			require.NotNil(t, conn)
 			assert.False(t, conn.Capabilities().MutatesData)
@@ -484,7 +508,7 @@ func TestMetricsToMetrics(t *testing.T) {
 			assert.NoError(t, conn.ConsumeMetrics(context.Background(), testMetrics))
 
 			allMetrics := sink.AllMetrics()
-			assert.Equal(t, 1, len(allMetrics))
+			assert.Len(t, allMetrics, 1)
 
 			// golden.WriteMetrics(t, filepath.Join("testdata", "metrics", tc.name+".yaml"), allMetrics[0])
 			expected, err := golden.ReadMetrics(filepath.Join("testdata", "metrics", tc.name+".yaml"))
@@ -641,7 +665,7 @@ func TestLogsToMetrics(t *testing.T) {
 			factory := NewFactory()
 			sink := &consumertest.MetricsSink{}
 			conn, err := factory.CreateLogsToMetrics(context.Background(),
-				connectortest.NewNopCreateSettings(), tc.cfg, sink)
+				connectortest.NewNopSettings(metadata.Type), tc.cfg, sink)
 			require.NoError(t, err)
 			require.NotNil(t, conn)
 			assert.False(t, conn.Capabilities().MutatesData)
@@ -656,7 +680,7 @@ func TestLogsToMetrics(t *testing.T) {
 			assert.NoError(t, conn.ConsumeLogs(context.Background(), testLogs))
 
 			allMetrics := sink.AllMetrics()
-			assert.Equal(t, 1, len(allMetrics))
+			assert.Len(t, allMetrics, 1)
 
 			// golden.WriteMetrics(t, filepath.Join("testdata", "logs", tc.name+".yaml"), allMetrics[0])
 			expected, err := golden.ReadMetrics(filepath.Join("testdata", "logs", tc.name+".yaml"))
